@@ -31,7 +31,7 @@ namespace NetworkScripts {
 
 
     /* Network Tick Control functions  */
-    public int GetServerTickPerSecond              => _currentNetworkTick;
+    public int GetServerTickPerSecond()              => _currentNetworkTick;
     public int SetServerTickPerSecond(int newTick) => _currentNetworkTick = newTick;
 
     public int  GetServerTick()                               => _currentNetworkTick;
