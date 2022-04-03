@@ -44,9 +44,8 @@ namespace NetworkScripts {
   #region Controller Configurations
 
     /* Controller Configurations */
-    public         bool IsDebug           = false;
-    private static int  TickHistorySize   = 128; // Circular buffer size
-    private static int  InitialTicksCount = 12;  // How many ticks required for init to be completed ( state becomes ready after x ticks )
+    private static int TickHistorySize   = 128; // Circular buffer size
+    private static int InitialTicksCount = 12;  // How many ticks required for init to be completed ( state becomes ready after x ticks )
 
     private static int PingTickAverageSize               = 12; // How many ticks required for averaging out rtt and server tick
     private static int PingConsolidationAllowedDeviation = 1;  // Tick offset ( 1/2 rtt ) forgiveness - we dont want to adjust ticks when there is a small deviation
@@ -88,6 +87,9 @@ namespace NetworkScripts {
   #endregion
 
   #region Private Variables
+
+    /* Public Variables */
+    public bool IsDebug = false;
 
     /* Private Variables */
     private TickPingState _tickPingState       = TickPingState.Initial;
