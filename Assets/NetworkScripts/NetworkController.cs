@@ -34,11 +34,8 @@ namespace NetworkScripts {
 
   /* Struct for saved ping item - used on the client to compare */
   public struct PingItem {
-    public bool IsSet;             // We are using circular buffers so we want to know witch tick is set
-    public int  ClientNetworkTick; // Client tick at the time of reception ( used to compare server and client network ticks )
-    public int  ClientTickOffset;  // Offset ( 1/2 rtt converted to ticks )
-    public int  ServerNetworkTick; // Tick as received from the host/server 
-    public int  TickDiff;          // Difference between Client and Server Ticks 
+    public int ClientTickOffset; // Offset ( 1/2 rtt converted to ticks )
+    public int TickDiff;         // Difference between Client and Server Ticks 
   }
 
 #endregion
@@ -47,18 +44,21 @@ namespace NetworkScripts {
   #region Controller Configurations
 
     /* Controller Configurations */
-    private static int TickHistorySize                   = 128; // Circular buffer size
-    private static int InitialTicksCount                 = 10;  // How many ticks required for init to be completed ( state becomes ready after x ticks )
-    private static int PingTickAverageSize               = 10;  // How many ticks required for averaging out rtt and server tick
-    private static int PingConsolidationAllowedDeviation = 1;   // Tick offset ( 1/2 rtt ) forgiveness - we dont want to adjust ticks when there is a small deviation
-    private static int PingAdjustmentSize                = 30;  // How many times does the tick has to be smaller than PingConsolidationAllowedDeviation to adjust regardless
-    private static int AcceleratedPingConsolidationSize  = 10;  // How many ticks should the accelerated state run for before verifying
-    private static int TickDiffConsolidationSize         = 10; // How many ticks to consider when Server Network Tick is calculated
-    
-    
-    private static int TickConsolidationVerificationSize  = 25; // How many times the ping has to be different for the system to adjust ping ( in case network improved by 1 tick )
-   
-   
+    private static int TickHistorySize   = 128; // Circular buffer size
+    private static int InitialTicksCount = 12;  // How many ticks required for init to be completed ( state becomes ready after x ticks )
+
+    private static int PingTickAverageSize               = 12; // How many ticks required for averaging out rtt and server tick
+    private static int PingConsolidationAllowedDeviation = 1;  // Tick offset ( 1/2 rtt ) forgiveness - we dont want to adjust ticks when there is a small deviation
+    private static int PingAdjustmentSize                = 25; // How many times does the tick has to be smaller than PingConsolidationAllowedDeviation to adjust regardless
+    private static int AcceleratedPingConsolidationSize  = 12; // How many ticks should the accelerated state run for before verifying
+    private static int TickDiffConsolidationSize         = 12; // How many ticks to consider when Server Network Tick is calculated
+    private static int TickConsolidationVerificationSize = 25; // How many times the ping has to be different for the system to adjust ping ( in case network improved by 1 tick )
+
+    /* Used to time ping intervals during Network Controller States */
+    private int InitialPingIntervalMs     = 100;
+    private int VerifyingPingIntervalMs   = 100;
+    private int AcceleratedPingIntervalMs = 200;
+    private int IdlePingIntervalMs        = 500;
 
   #endregion
 
@@ -104,7 +104,9 @@ namespace NetworkScripts {
     private int               _pingConsistentDiffCount = 0;     // Used to count how consistent is the difference in ping ( can trigger lazy ping update )
     private int               _acceleratedPingCount    = 0;     // Count pings when Network Controller is in Accelerated state
     private int               _verifyingTickCount      = 0;     // Count pings when Network Controller is in Verifying state
-    
+    private float             _lastPingTime            = 0;     // Used to measure time between pings - variable depending on the state
+    private int               _deSyncIdleCounter       = 0;     // Counts de-syncs in idle mode - Dont panic after 1 de-sync - wait for
+
   #endregion
 
   #region Client Functions
@@ -156,7 +158,7 @@ namespace NetworkScripts {
     [ClientRpc(channel = Channels.Unreliable)]
     private void RpcServerPong(ServerPongPayload serverPong) {
       /* We only want to get the most recent pong from the server and ignore duplicates or throttled pongs */
-      if (_lastReceivedPong.ServerTickNumber < serverPong.ServerTickNumber) {
+      if (_lastReceivedPong.ServerTickNumber < serverPong.ServerTickNumber || _lastReceivedPong.ClientTickNumber < serverPong.ClientTickNumber) {
         _lastReceivedPong = serverPong;
         _isReceivedPong = true;
       }
@@ -165,23 +167,26 @@ namespace NetworkScripts {
     [Client]
     private void TickPing() {
       /* We want to decide when to sent the ping - i use this funky method because its convenient */
+      int milliseconds = Mathf.RoundToInt((float) (Time.time * 1000));
+
       bool queuePing = false;
       switch (_tickPingState) {
         case TickPingState.Initial:
-          queuePing = _clientTickNumber % 10 == 0;
+          queuePing = milliseconds - _lastPingTime > InitialPingIntervalMs;
           break;
         case TickPingState.Verifying:
-          queuePing = _clientTickNumber % 10 == 0;
+          queuePing = milliseconds - _lastPingTime > VerifyingPingIntervalMs;
           break;
         case TickPingState.Accelerated:
-          queuePing = _clientTickNumber % 20 == 0;
+          queuePing = milliseconds - _lastPingTime > AcceleratedPingIntervalMs;
           break;
         case TickPingState.Idle:
-          queuePing = _clientTickNumber % 50 == 0;
+          queuePing = milliseconds - _lastPingTime > IdlePingIntervalMs;
           break;
       }
 
       if (queuePing) {
+        _lastPingTime = milliseconds;
         CmdPingServer(new ServerPingPayload() {
           ClientTickNumber = _clientTickNumber,
         });
@@ -199,7 +204,8 @@ namespace NetworkScripts {
 
     [Client]
     private void HandleServerPong() {
-      if (!_isReceivedPong) return;                     // If no pongs were received - exit function
+      if (!_isReceivedPong) return; // If no pongs were received - exit function
+      _isReceivedPong = false;
       ServerPongPayload serverPong = _lastReceivedPong; // if Pong was received set as pong to handle
 
       /* Calculate basic info about received pong */
@@ -211,8 +217,6 @@ namespace NetworkScripts {
       int serverTickCandidate = serverPong.ServerTickNumber + estimatedClientOffset;
       /* Save estimation in tick history */
       AddPing(new PingItem() {
-        IsSet = true,
-        ServerNetworkTick = serverTickCandidate,
         TickDiff = serverTickCandidate - localNetworkTick,
         ClientTickOffset = estimatedClientOffset,
       });
@@ -230,7 +234,10 @@ namespace NetworkScripts {
             _previousTickPingOffset = _networkTick.GetClientTickOffset(); // Save last average state
             _tickPingState = TickPingState.Idle;                          // Set Network Controller state to idle
             _isReady = true;                                              // Set isReady to true
+            _networkTick.SetIsReady(true);
+            Debug.Log($"@Client Ready NetworkTick:[{_networkTick.GetServerTick()}] Network Offset:[{_networkTick.GetClientTickOffset()}]");
           }
+
           break;
         case TickPingState.Accelerated:
           // Used after server tick of ping tick are changed - we want to get clean ticks to check 
@@ -239,6 +246,7 @@ namespace NetworkScripts {
             _acceleratedPingCount = 0;
             _tickPingState = TickPingState.Idle;
           }
+
           ConsiderPingAdjustment(true); // Cosnider updating ping but dont trigger Network State change
           break;
         case TickPingState.Verifying:
@@ -246,12 +254,19 @@ namespace NetworkScripts {
           ConsolidateServerTickNumber();
           ConsiderPingAdjustment(true);
           break;
-        
+
         case TickPingState.Idle:
           // When idling - always check if there are fluctuations in ping or network time ( server got stuck or client got stuck )
           ConsiderPingAdjustment();
           if (localNetworkTick != serverTickCandidate) {
-            _tickPingState = TickPingState.Verifying;
+            _deSyncIdleCounter++;
+            if (_deSyncIdleCounter > 2) {
+              _tickPingState = TickPingState.Verifying;
+              _deSyncIdleCounter = 0;
+            }
+          }
+          else {
+            _deSyncIdleCounter = 0;
           }
 
           break;
@@ -280,7 +295,6 @@ namespace NetworkScripts {
     [Server]
     private void ServerFixedUpdate() {
       int nextServerTick = Mathf.RoundToInt((float) (NetworkTime.time * _networkTick.GetServerTickPerSecond()));
-
       _networkTick.SetServerTick(nextServerTick);
       _isReady = true;
       PhysicStep(Time.deltaTime);
@@ -292,6 +306,18 @@ namespace NetworkScripts {
       }
       else {
         ClientFixedUpdate();
+      }
+      // DebugLogTimeDiff();
+    }
+
+    private void DebugLogTimeDiff() {
+      if (_isReady && _clientTickNumber % 50 == 0) {
+        int networkTimeTick = Mathf.RoundToInt((float) (NetworkTime.time * _networkTick.GetServerTickPerSecond()));
+        string state = _tickPingState == TickPingState.Verifying ? "Verifying" : "idle";
+        Debug.Log(
+          $"ClientNetworkTick:[{_networkTick.GetServerTick()}] ClientPredictionTick:[{_networkTick.GetPredictionTick()}] ClientTickOffset:[{_networkTick.GetClientTickOffset()}] NetworkTimeTick:[{networkTimeTick}] verifyingTickCount:[{_verifyingTickCount}]:{state}");
+        // Debug.Log($"=============================================== [{_clientTickNumber}][{_clientTickNumber - _networkTick.GetTickLocalOffset()}][{_networkTick.GetServerTick()}][{networkTimeTick}][{_verifyingTickCount}] ---> {state}");
+        // Debug.Log($"==============================================={_pingConsistentDiffCount} [{_networkTick.GetNetworkTickOffset()}][{GetTickPingAverage()}] / [{_networkTick.GetPredictionTick()}] <>[{_networkTick.GetTick()}][{networkTimeTick}][{_verifyingTickCount}] ---> {state}");
       }
     }
 
@@ -351,30 +377,38 @@ namespace NetworkScripts {
     }
 
     /* Find the position of the highest ping */
-    private int GetTickPingAverageMaxIndex() {
-      int maxAbs = -1;
-      int maxAbsIndex = 0;
+    private (int, int) GetTickPingAverageMaxIndex() {
+      PingItem initialItem = GetPing(_tickPingCount);
+      int minIndex = _tickPingCount;
+      int maxIndex = _tickPingCount;
+      int max = initialItem.TickDiff;
+      int min = initialItem.TickDiff;
       for (int i = 0; i <= PingTickAverageSize; i++) {
         int pingIndex = _tickPingCount - i;
         PingItem item = GetPing(pingIndex);
-        if (item.IsSet && item.ClientTickOffset > maxAbs) {
-          maxAbs = item.ClientTickOffset;
-          maxAbsIndex = pingIndex;
+        if (max < item.ClientTickOffset) {
+          max = item.ClientTickOffset;
+          maxIndex = pingIndex;
+        }
+
+        if (min > item.ClientTickOffset) {
+          min = item.ClientTickOffset;
+          minIndex = pingIndex;
         }
       }
 
-      return maxAbsIndex;
+      return (maxIndex, minIndex);
     }
 
-    /* Average out ping numbers - exclude highest ping number ( ignores short spikes ) */
-    private int GetTickPingAverage() {  //TODO: Cosnider using smoothing algorithms 
-      int maxAbsIndex = GetTickPingAverageMaxIndex();
+    /* Average out ping numbers - exclude highest and lowest ping numbers ( ignores short spikes ) */
+    private int GetTickPingAverage() { //TODO: Cosnider using smoothing algorithms 
+      (int maxIndex, int minIndex) = GetTickPingAverageMaxIndex();
       int sumCounter = 0;
       float sum = 0;
       for (int i = 0; i <= PingTickAverageSize; i++) {
         int pingIndex = _tickPingCount - i;
         PingItem item = GetPing(pingIndex);
-        if (pingIndex != maxAbsIndex && item.IsSet) {
+        if (pingIndex != maxIndex && pingIndex != minIndex) {
           sum += item.ClientTickOffset;
           sumCounter++;
         }
@@ -382,32 +416,41 @@ namespace NetworkScripts {
 
       return Mathf.FloorToInt(sum / sumCounter);
     }
-    
-    // Get position of max tick diff (ABS)
-    private int GetTickDiffAverageMaxIndex() {
-      int maxAbs = -1;
-      int maxAbsIndex = 0;
+
+    // Get position of max and min tick diff - try to avoid spikes
+    private (int, int) GetTickDiffAverageMaxIndex() {
+      PingItem initialItem = GetPing(_tickPingCount);
+      int minIndex = _tickPingCount;
+      int maxIndex = _tickPingCount;
+      int max = initialItem.TickDiff;
+      int min = initialItem.TickDiff;
+
       for (int i = 0; i <= TickDiffConsolidationSize; i++) {
         int pingIndex = _tickPingCount - i;
         PingItem item = GetPing(pingIndex);
-        if (item.IsSet && Math.Abs(item.TickDiff) > maxAbs) {
-          maxAbs = Math.Abs(item.TickDiff);
-          maxAbsIndex = pingIndex;
+        if (max < item.TickDiff) {
+          max = item.TickDiff;
+          maxIndex = pingIndex;
+        }
+
+        if (min > item.TickDiff) {
+          min = item.TickDiff;
+          minIndex = pingIndex;
         }
       }
 
-      return maxAbsIndex;
+      return (maxIndex, minIndex);
     }
-    
+
     // Average out last X tick diffs and exclude highest diff to avoid spikes
     private float GetTickDiffAverage() {
-      int maxAbsIndex = GetTickDiffAverageMaxIndex();
+      (int maxIndex, int minIndex) = GetTickDiffAverageMaxIndex();
       int sumCounter = 0;
       float sum = 0;
       for (int i = 0; i <= TickDiffConsolidationSize; i++) {
         int pingIndex = _tickPingCount - i;
         PingItem item = GetPing(pingIndex);
-        if (pingIndex != maxAbsIndex && item.IsSet) {
+        if (pingIndex != maxIndex && pingIndex != minIndex) {
           sum += item.TickDiff;
           sumCounter++;
         }
@@ -415,7 +458,7 @@ namespace NetworkScripts {
 
       return sum / sumCounter;
     }
-    
+
     /*
      * Adjust RTT ticks (can trigger physics tick adjustment)
      * We want to consider adjusting ping if it changes: isSilent wont trigger Network State Change
@@ -432,19 +475,20 @@ namespace NetworkScripts {
         }
         else {
           if (_pingConsistentDiffCount > 0) {
-            _pingConsistentDiffCount--; 
+            _pingConsistentDiffCount--;
           }
         }
       }
+
       _pingLastDiff = pingDiff;
-     
       if (Math.Abs(pingDiff) > PingConsolidationAllowedDeviation || _pingConsistentDiffCount > PingAdjustmentSize) {
         // Event if we are ready to adjust we will wait until ping is consistent ( not going up or down ) to avoid multiple stutters
         if (newOffset == _previousTickPingOffset) {
           _networkTick.SetClientTickOffset(newOffset);
           AdjustClientPhysicsTick(pingDiff);
           _pingConsistentDiffCount = 0;
-          Debug.Log($"@Client Prediction Tick Adjusted [{pingDiff}]");
+          string adjustmentDirection = pingDiff > 0 ? "+" : "";
+          Debug.Log($"@Client Prediction Tick Adjusted [{adjustmentDirection}{pingDiff}] -> new Offset [{newOffset}]");
         }
 
         // if is not silent we want to trigger accelerated Network Controller state to verify ping faster
@@ -455,8 +499,8 @@ namespace NetworkScripts {
 
       _previousTickPingOffset = newOffset;
     }
-    
-    
+
+
     /*
      * Adjust Server Network Tick sync (can trigger physics tick adjustment)
      * We consider physics engine adjustment here
@@ -466,7 +510,7 @@ namespace NetworkScripts {
     private void ConsolidateServerTickNumber() {
       int localNetworkTick = _networkTick.GetServerTick();
       float average = GetTickDiffAverage();
-      
+
       if (Mathf.Abs(average) > 0.9) {
         if (_verifyingTickCount > TickConsolidationVerificationSize) {
           int tickAdjustment = average > 0 ? Mathf.CeilToInt(average) : Mathf.FloorToInt(average);
@@ -475,7 +519,8 @@ namespace NetworkScripts {
           _networkTick.SetTickLocalOffset(_clientTickNumber - (localNetworkTick + tickAdjustment));
           _verifyingTickCount = 0;
           _tickPingState = TickPingState.Idle;
-          Debug.Log($"@Client Network Tick Adjusted [{tickAdjustment}]");
+          string adjustmentDirection = tickAdjustment > 0 ? "+" : "";
+          Debug.Log($"@Client Network Tick Adjusted [{adjustmentDirection}{tickAdjustment}] -> new Network Tick [{localNetworkTick + tickAdjustment}]");
         }
         else {
           _verifyingTickCount++;
@@ -491,6 +536,7 @@ namespace NetworkScripts {
         }
       }
     }
+
   #endregion
   }
 }
