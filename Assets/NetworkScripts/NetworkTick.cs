@@ -6,12 +6,12 @@ namespace NetworkScripts {
   public class NetworkTick {
     /* Configuratuins */
 
-    private static int _ticksPerSecond = 100;
+    private static int _ticksPerSecond = Mathf.RoundToInt(1 / Time.deltaTime); // Get number ot ticks per second - more usefull for converting time to ticks
 
     /* Initial variables */
-    private static int _currentNetworkTick            = 0;
-    private static int _currentNetworkTickOffset      = 0;
-    private static int _currentNetworkTickLocalOffset = 0;
+    private static int _currentNetworkTick            = 0; // Server tick
+    private static int _currentNetworkTickOffset      = 0; // 1/2 Rtt converted to Ticks
+    private static int _currentNetworkTickLocalOffset = 0; // Difference between Client ticks and Network ticks ( used in case client is lagging for some reason
 
 
     /***************************************/
@@ -34,7 +34,7 @@ namespace NetworkScripts {
     public int GetServerTickPerSecond              => _currentNetworkTick;
     public int SetServerTickPerSecond(int newTick) => _currentNetworkTick = newTick;
 
-    public int  GetServerTick                                 => _currentNetworkTick;
+    public int  GetServerTick()                               => _currentNetworkTick;
     public int  SetServerTick(int newTick)                    => _currentNetworkTick = newTick;
     public int  GetClientTickOffset()                         => _currentNetworkTickOffset;
     public void SetClientTickOffset(int newNetworkTickOffset) => _currentNetworkTickOffset = newNetworkTickOffset;
