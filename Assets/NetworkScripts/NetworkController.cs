@@ -52,7 +52,7 @@ namespace NetworkScripts {
     private static int PingAdjustmentSize                = 25; // How many times does the tick has to be smaller than PingConsolidationAllowedDeviation to adjust regardless
     private static int AcceleratedPingConsolidationSize  = 12; // How many ticks should the accelerated state run for before verifying
     private static int TickDiffConsolidationSize         = 12; // How many ticks to consider when Server Network Tick is calculated
-    private static int TickConsolidationVerificationSize = 25; // How many times the ping has to be different for the system to adjust ping ( in case network improved by 1 tick )
+    private static int TickConsolidationVerificationSize = 30; // How many times the ping has to be different for the system to adjust Network Tick ( in case network improved by 1 tick )
 
     /* Used to time ping intervals during Network Controller States */
     private int InitialPingIntervalMs     = 100;
@@ -106,6 +106,7 @@ namespace NetworkScripts {
     private int               _verifyingTickCount      = 0;     // Count pings when Network Controller is in Verifying state
     private float             _lastPingTime            = 0;     // Used to measure time between pings - variable depending on the state
     private int               _deSyncIdleCounter       = 0;     // Counts de-syncs in idle mode - Dont panic after 1 de-sync - wait for
+    private int               _pingInSyncCounter       = 0;     // Wait for 3 consistent pings to apply any changes ( group stutters )
 
   #endregion
 
@@ -483,10 +484,19 @@ namespace NetworkScripts {
       _pingLastDiff = pingDiff;
       if (Math.Abs(pingDiff) > PingConsolidationAllowedDeviation || _pingConsistentDiffCount > PingAdjustmentSize) {
         // Event if we are ready to adjust we will wait until ping is consistent ( not going up or down ) to avoid multiple stutters
+
         if (newOffset == _previousTickPingOffset) {
+          _pingInSyncCounter++;
+        }
+        else {
+          _pingInSyncCounter = 0;
+        }
+        // Wait for 3 consistent pings before applying ( maybe ping is in flux )
+        if (_pingInSyncCounter > 2) {
           _networkTick.SetClientTickOffset(newOffset);
           AdjustClientPhysicsTick(pingDiff);
           _pingConsistentDiffCount = 0;
+          _pingInSyncCounter = 0;
           string adjustmentDirection = pingDiff > 0 ? "+" : "";
           Debug.Log($"@Client Prediction Tick Adjusted [{adjustmentDirection}{pingDiff}] -> new Offset [{newOffset}]");
         }
