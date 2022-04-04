@@ -460,11 +460,13 @@ namespace NetworkScripts {
 
     [Client]
     public virtual int PhysicStepSkip(int skipSteps, float deltaTime) {
+      Debug.Log($"Ignored 'PhysicStep' step and calling PhysicStepSkip( {skipSteps}, {deltaTime} )");
       return skipSteps - 1; // In case someone wants to skip more than 1 step on each FixedUpdate
     }
 
     [Client]
     public virtual int PhysicStepFastForward(int fastForwardSteps, float deltaTime) {
+      Debug.Log($"Ignored 'PhysicStep' step and calling PhysicStepFastForward( {fastForwardSteps}, {deltaTime} )");
       return 0; //In case someone wants to fast forward ticks not all at once
     }
 
