@@ -444,7 +444,7 @@ namespace NetworkScripts {
 
     [Client]
     private void PhysicsStepHandle() {
-      float deltaTime = Time.deltaTime;
+      float deltaTime = Time.fixedDeltaTime;
       if (_skipPhysicsSteps > 0) {
         _skipPhysicsSteps = PhysicStepSkip(_skipPhysicsSteps, deltaTime);
         return;
