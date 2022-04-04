@@ -212,7 +212,7 @@ namespace NetworkScripts {
      */
 
     [Client]
-    private void ConsiderPingAdjustment(bool isSilent = false) {
+    private void ConsiderPingAdjustment(bool isIdle) {
       int newOffset = GetTickPingAverage();
       int pingDiff = newOffset - _networkTick.GetClientTickOffset();
       if (pingDiff == 0) {
@@ -223,7 +223,7 @@ namespace NetworkScripts {
 
       // If is not silent we want to see if ping has consistent fluctuations and adjust accordingly
       // Its used when ping is 1 forward or backwards for >50% of the time ( we are on the edge )
-      if (!isSilent) { //PS: used in idle mode
+      if (isIdle) { //PS: used in idle mode
         if (_pingLastDiff == pingDiff && pingDiff != 0) {
           IncreasePingConsistency();
         }
@@ -254,7 +254,7 @@ namespace NetworkScripts {
         }
 
         // if is not silent we want to trigger accelerated Network Controller state to verify ping faster
-        if (!isSilent) {
+        if (isIdle) {
           _tickPingState = TickPingState.Accelerated;
         }
       }
@@ -345,17 +345,17 @@ namespace NetworkScripts {
             _tickPingState = TickPingState.Idle;
           }
 
-          ConsiderPingAdjustment(true); // Cosnider updating ping but dont trigger Network State change
+          ConsiderPingAdjustment(false); // Cosnider updating ping but dont trigger Network State change
           break;
         case TickPingState.Verifying:
           // If we dettected Server Network Tick change we want to verify that it was not a single occurrence or a spike
           ConsolidateServerTickNumber();
-          ConsiderPingAdjustment(true);
+          ConsiderPingAdjustment(false);
           break;
 
         case TickPingState.Idle:
           // When idling - always check if there are fluctuations in ping or network time ( server got stuck or client got stuck )
-          ConsiderPingAdjustment();
+          ConsiderPingAdjustment(true);
           if (localNetworkTick != serverTickCandidate) {
             _deSyncIdleCounter++;
             if (_deSyncIdleCounter > 2) {
