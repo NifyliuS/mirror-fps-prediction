@@ -151,16 +151,17 @@ namespace NetworkScripts {
     /* Client Server Communication */
     /*******************************/
     [Command(requiresAuthority = false, channel = Channels.Unreliable)]
-    private void CmdPingServer(ServerPingPayload clientPing) {
+    private void CmdPingServer(ServerPingPayload clientPing, NetworkConnectionToClient sender = null) {
       // Once we got ping from client we want to send the current server tick immediately 
-      RpcServerPong(new ServerPongPayload() {
+
+      RpcServerPong(sender, new ServerPongPayload() {
         ClientTickNumber = clientPing.ClientTickNumber,
         ServerTickNumber = _networkTick.GetServerTick(),
       });
     }
 
     [TargetRpc(channel = Channels.Unreliable)]
-    private void RpcServerPong(ServerPongPayload serverPong) {
+    private void RpcServerPong(NetworkConnection _, ServerPongPayload serverPong) {
       /* We only want to get the most recent pong from the server and ignore duplicates or throttled pongs */
       if (_lastReceivedPong.ServerTickNumber < serverPong.ServerTickNumber || _lastReceivedPong.ClientTickNumber < serverPong.ClientTickNumber) {
         _lastReceivedPong = serverPong;
