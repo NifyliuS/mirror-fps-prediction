@@ -477,7 +477,8 @@ namespace NetworkScripts {
     /********************************************************/
     /* Helper functions used to calculate and adjust things */
     /********************************************************/
-    // Idle ping consistency counter functions
+    
+    /* Idle ping consistency counter functions */
     private int GetPingConsistency() {
       return _pingConsistentDiffCount;
     }
@@ -496,6 +497,7 @@ namespace NetworkScripts {
       _pingConsistentDiffCount = 0;
     }
 
+    /* Ping history management */
     private PingItem GetPing(int index) {
       return _tickHistory[index % TickHistorySize];
     }
@@ -506,7 +508,7 @@ namespace NetworkScripts {
       return _tickPingCount;
     }
 
-    /* Find the position of the highest ping */
+    /* Find the position of the highest and lowest Client Tick Offset ( deviation between running server tick and remote tick candidate ) */
     private (int, int) GetTickPingAverageMaxIndex() {
       PingItem initialItem = GetPing(_tickPingCount);
       int minIndex = _tickPingCount;
