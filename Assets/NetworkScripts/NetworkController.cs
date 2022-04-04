@@ -477,7 +477,7 @@ namespace NetworkScripts {
     /********************************************************/
     /* Helper functions used to calculate and adjust things */
     /********************************************************/
-    
+
     /* Idle ping consistency counter functions */
     private int GetPingConsistency() {
       return _pingConsistentDiffCount;
