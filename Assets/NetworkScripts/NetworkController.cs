@@ -159,7 +159,7 @@ namespace NetworkScripts {
       });
     }
 
-    [ClientRpc(channel = Channels.Unreliable)]
+    [TargetRpc(channel = Channels.Unreliable)]
     private void RpcServerPong(ServerPongPayload serverPong) {
       /* We only want to get the most recent pong from the server and ignore duplicates or throttled pongs */
       if (_lastReceivedPong.ServerTickNumber < serverPong.ServerTickNumber || _lastReceivedPong.ClientTickNumber < serverPong.ClientTickNumber) {
