@@ -1,16 +1,18 @@
 # mirror-fps-prediction
+
 mirror-fps-prediction
 
 # Usage:
 
 ## NetworkTick Usage:
-- ### NetworkTick.ServerTick: 
-    Returns current Tick on the Server
+
+- ### NetworkTick.ServerTick:
+  Returns current Tick on the Server
   ```
    int - NetworkTick.ServerTick
   ```
-- ### NetworkTick.ClientOffsetTick: 
-    Returns the difference between ServerTick and Fast forwarded tick on the client based on RTT (always half RTT converted to ticks)
+- ### NetworkTick.ClientOffsetTick:
+  Returns the difference between ServerTick and Fast forwarded tick on the client based on RTT (always half RTT converted to ticks)
   ```
    int - NetworkTick.ClientOffsetTick
   ```
@@ -39,8 +41,8 @@ mirror-fps-prediction
   ```
 
 ## NetworkController usage
-```using NetworkScripts;
 
+```using NetworkScripts;
 public class CustomNetworkController : NetworkController {
   public override void PhysicStep(float deltaTime) {
     // Physics normal operation - 1 delta time forward
@@ -48,12 +50,12 @@ public class CustomNetworkController : NetworkController {
     KinematicCharacterSystem.ManualSimulate(deltaTime);
   }
 
-  public override int PhysicStepSkip(int skipSteps, float deltaTime) {
+  public override int PhysicStepSkip(float deltaTime, int skipSteps) {
     // The controller will automatically skip steps for you but if you want to reverse physics you should do it here
     return skipSteps - 1;
   }
 
-  public override int PhysicStepFastForward(int fastForwardSteps, float deltaTime) {
+  public override int PhysicStepFastForward(float deltaTime, float fixedDeltaTime, int fastForwardSteps) {
     // You can fast forward physics here or you can spread the fast forwarding over time - up to you
 
     /******************************************************************************/
@@ -67,8 +69,9 @@ public class CustomNetworkController : NetworkController {
 
     /* OR */
     /*
-     * KinematicCharacterSystem.ManualSimulate(deltaTime*2);
+     * KinematicCharacterSystem.ManualSimulate(fixedDeltaTime*2);
      * return fastForwardSteps - 2; 
      */
   }
-}```
+}
+```

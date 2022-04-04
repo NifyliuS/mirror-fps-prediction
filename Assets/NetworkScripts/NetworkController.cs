@@ -444,9 +444,10 @@ namespace NetworkScripts {
 
     [Client]
     private void PhysicsStepHandle() {
-      float deltaTime = Time.fixedDeltaTime;
+      float fixedDeltaTime = Time.fixedDeltaTime;
+      float deltaTime = Time.deltaTime;
       if (_skipPhysicsSteps > 0) {
-        _skipPhysicsSteps = PhysicStepSkip(_skipPhysicsSteps, deltaTime);
+        _skipPhysicsSteps = PhysicStepSkip(deltaTime, _skipPhysicsSteps);
         // Fix user generated errors
         if (_skipPhysicsSteps < 0) {
           _skipPhysicsSteps = 0;
@@ -457,7 +458,7 @@ namespace NetworkScripts {
 
       if (_forwardPhysicsSteps > 0) {
         // include current tick simulation + fast forwarded one ( for simple overrides )
-        _forwardPhysicsSteps = PhysicStepFastForward(_forwardPhysicsSteps, deltaTime);
+        _forwardPhysicsSteps = PhysicStepFastForward(deltaTime, fixedDeltaTime, _forwardPhysicsSteps);
         // Fix user generated errors
         if (_forwardPhysicsSteps < 0) {
           _forwardPhysicsSteps = 0;
@@ -471,14 +472,14 @@ namespace NetworkScripts {
 
 
     [Client]
-    public virtual int PhysicStepSkip(int skipSteps, float deltaTime) {
+    public virtual int PhysicStepSkip(float deltaTime, int skipSteps) {
       Debug.Log($"Ignored 'PhysicStep' step and calling PhysicStepSkip( {skipSteps}, {deltaTime} )");
       return skipSteps - 1; // In case someone wants to skip more than 1 step on each FixedUpdate
     }
 
     [Client]
-    public virtual int PhysicStepFastForward(int fastForwardSteps, float deltaTime) {
-      Debug.Log($"Ignored 'PhysicStep' step and calling PhysicStepFastForward( {fastForwardSteps}, {deltaTime} )");
+    public virtual int PhysicStepFastForward(float deltaTime, float fixedDeltaTime, int fastForwardSteps) {
+      Debug.Log($"Ignored 'PhysicStep' step and calling PhysicStepFastForward( {fastForwardSteps}, {deltaTime}/{fixedDeltaTime} )");
       return 0; //In case someone wants to fast forward ticks not all at once
     }
 
