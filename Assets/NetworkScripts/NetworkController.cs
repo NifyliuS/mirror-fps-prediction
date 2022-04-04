@@ -447,11 +447,22 @@ namespace NetworkScripts {
       float deltaTime = Time.fixedDeltaTime;
       if (_skipPhysicsSteps > 0) {
         _skipPhysicsSteps = PhysicStepSkip(_skipPhysicsSteps, deltaTime);
+        // Fix user generated errors
+        if (_skipPhysicsSteps < 0) {
+          _skipPhysicsSteps = 0;
+        }
+
         return;
       }
 
       if (_forwardPhysicsSteps > 0) {
+        // include current tick simulation + fast forwarded one ( for simple overrides )
         _forwardPhysicsSteps = PhysicStepFastForward(_forwardPhysicsSteps, deltaTime);
+        // Fix user generated errors
+        if (_forwardPhysicsSteps < 0) {
+          _forwardPhysicsSteps = 0;
+        }
+
         return;
       }
 
