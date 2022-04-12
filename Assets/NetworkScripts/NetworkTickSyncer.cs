@@ -1,6 +1,7 @@
-using System;
+
 using System.Collections;
 using System.Collections.Generic;
+using System;
 using Mirror;
 using UnityEngine;
 
@@ -40,7 +41,7 @@ namespace NetworkScripts {
 
 #endregion
 
-  public class NetworkController : NetworkBehaviour {
+  public class NetworkTickSyncer : NetworkBehaviour {
   #region Controller Configurations
 
     /* Controller Configurations */
@@ -65,11 +66,11 @@ namespace NetworkScripts {
   #region Static Instanciation
 
     /* Instantiate instances - used for Static level access */
-    private static NetworkController _instance;
+    private static NetworkTickSyncer _instance;
     private static NetworkTick       _networkTick;
     private static bool              _isReady = false;
 
-    public static NetworkController Instance => _instance;
+    public static NetworkTickSyncer Instance => _instance;
     public static NetworkTick       Tick     => _networkTick;
     public static bool              IsReady  => _isReady;
 
