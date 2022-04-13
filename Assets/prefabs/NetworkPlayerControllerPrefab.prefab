@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 7607670614465995970}
   - component: {fileID: -4832832942726056485}
   - component: {fileID: 5148150762477167579}
+  - component: {fileID: 8885746753372665894}
   m_Layer: 0
   m_Name: NetworkPlayerControllerPrefab
   m_TagString: Untagged
@@ -63,3 +64,41 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   syncMode: 0
   syncInterval: 0.1
+  CharacterPrefab: {fileID: 9029644826864479884, guid: ae1437a947b62e348a1c715898876018, type: 3}
+  DynamicNT: {fileID: 8885746753372665894}
+--- !u!114 &8885746753372665894
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 993027349265489023}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9949e5ba0ee353b4b932990adf4dce7e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  syncMode: 0
+  syncInterval: 0.02
+  clientAuthority: 0
+  sendInterval: 0.02
+  syncPosition: 1
+  syncRotation: 1
+  syncScale: 1
+  interpolatePosition: 1
+  interpolateRotation: 1
+  interpolateScale: 0
+  bufferTimeMultiplier: 1
+  bufferSizeLimit: 64
+  catchupThreshold: 4
+  catchupMultiplier: 0.1
+  onlySyncOnChange: 1
+  bufferResetMultiplier: 5
+  positionSensitivity: 0.01
+  rotationSensitivity: 0.01
+  scaleSensitivity: 0.01
+  showGizmos: 0
+  showOverlay: 0
+  overlayColor: {r: 0, g: 0, b: 0, a: 0.5}
+  _parentTransform: {fileID: 0}
+  _parentIdentity: {fileID: 0}
