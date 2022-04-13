@@ -1,6 +1,7 @@
 #define onlySyncOnChange_BANDWIDTH_SAVING
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 using Mirror;
 using UnityEngine.Animations;
@@ -113,6 +114,7 @@ namespace NetworkScripts {
 
     private void LateUpdate() {
       if (_parentIdentity && _parentTransform.hasChanged) {
+        _parentTransform.hasChanged = false;
         if (isServer) {
           UpdateParentOffset(); 
           RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset);
@@ -137,10 +139,8 @@ namespace NetworkScripts {
           UpdateParentOffset(); 
           RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset);
         }
-        //   Debug.Log($"parrentY:[{_parentTransform.position.y}] offsetY:[{_parentOffset.PositonOffset.y}] targetY:[{targetComponent.position.y}]");
         Nullable < Vector3 > newPositon = null;
         if (_positionOffset != null) newPositon = _parentTransform.position + _positionOffset;
-        
         base.OnServerToClientSync(
           newPositon,
           rotation,
