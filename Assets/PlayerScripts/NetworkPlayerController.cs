@@ -22,8 +22,11 @@ namespace PlayerScripts {
   #endregion
 
     private void InstantiateCharacters() {
-      // _LocalPlayer = Instantiate(CharacterPrefab, new Vector3(transform.position.x, transform.position.y, transform.position.z), Quaternion.identity);
-      // _LocalPlayer.transform.SetParent(null);
+      if (isLocalPlayer) {
+        _LocalPlayer = Instantiate(CharacterPrefab, new Vector3(transform.position.x, transform.position.y, transform.position.z), Quaternion.identity);
+        _LocalPlayer.transform.SetParent(null); 
+      }
+       
       _RemotePlayer = Instantiate(CharacterPrefab, new Vector3(transform.position.x, transform.position.y, transform.position.z), Quaternion.identity);
       _RemotePlayer.transform.SetParent(transform);
     }
@@ -36,6 +39,31 @@ namespace PlayerScripts {
       InstantiateCharacters();
     }
 
+    [Command]
+    private void CmdSetServerPosition(Vector3 newPosition) {
+      transform.position = newPosition;
+    }
+
+
+    private void Update() {
+      if (Input.GetKey(KeyCode.W)) {
+        transform.position = new Vector3(transform.position.x, transform.position.y + 0.01f, transform.position.z);
+      }
+      if (Input.GetKey(KeyCode.S)) {
+        transform.position = new Vector3(transform.position.x, transform.position.y - 0.01f, transform.position.z);
+      }
+      
+      if (Input.GetKey(KeyCode.D)) {
+        transform.position = new Vector3(transform.position.x + 0.01f, transform.position.y , transform.position.z);
+      }
+      if (Input.GetKey(KeyCode.A)) {
+        transform.position = new Vector3(transform.position.x - 0.01f, transform.position.y , transform.position.z);
+      }
+    }
+
+ 
+    
+    [Server]
     private void OnTriggerEnter(Collider collider) {
       Debug.Log("OnTriggerEnterOnTriggerEnterOnTriggerEnterOnTriggerEnterOnTriggerEnterOnTriggerEnterOnTriggerEnter");
       NetworkCollider networkCollider = collider.GetComponentInParent<NetworkCollider>();
@@ -44,7 +72,7 @@ namespace PlayerScripts {
         DynamicNT.SetNetworkTransformParent(networkCollider.netIdentity);
       }
     }
-
+    [Server]
     private void OnTriggerExit(Collider collider) {
       Debug.Log("OnTriggerExitOnTriggerExitOnTriggerExitOnTriggerExitOnTriggerExitOnTriggerExitOnTriggerExit");
       NetworkCollider networkCollider = collider.GetComponentInParent<NetworkCollider>();
