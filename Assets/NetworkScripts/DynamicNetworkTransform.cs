@@ -11,23 +11,22 @@ using UnityEngine.Animations;
     API Reference: https://mirror-networking.com/docs/api/Mirror.NetworkTransformBase.html
 */
 namespace NetworkScripts {
- 
-
   public class DynamicNetworkTransform : NetworkTransformBase {
-    protected override       Transform       targetComponent => transform;
-     public Transform       _parentTransform;
-    [SerializeField] private NetworkIdentity _parentIdentity;
+    protected override Transform       targetComponent        => transform;
+    public             NetworkIdentity ParentNetworkIdentity  => _parentIdentity;
+    public             Transform       ParentNetworkTransform => _parentTransform;
 
-    [SerializeField] private Nullable<Vector3> _positionOffset = null;
+    private Transform       _parentTransform;
+    [SyncVar]private NetworkIdentity _parentIdentity;
+
+    [SerializeField] private Nullable<Vector3>    _positionOffset = null;
     [SerializeField] private Nullable<Quaternion> _rotationOffset = null;
-    [SerializeField] private Nullable<Vector3> _scaleOffset = null;
-    
-    public                   NetworkIdentity ParentNetworkIdentity  => _parentIdentity;
-    public                   Transform       ParentNetworkTransform => _parentTransform;
+    [SerializeField] private Nullable<Vector3>    _scaleOffset    = null;
 
     public void SetNetworkTransformParent(NetworkIdentity identity) {
       _parentTransform = identity.transform;
       _parentIdentity = identity;
+      UpdateParentOffset();
       RpcUpdateNetworkParent(identity);
     }
 
@@ -38,30 +37,23 @@ namespace NetworkScripts {
     }
 
     [Command(channel = Channels.Reliable)]
-    public void CmdSetNetworkParent(NetworkIdentity identity) {
-      
-    }
+    public void CmdSetNetworkParent(NetworkIdentity identity) { }
+
     [Command(channel = Channels.Reliable)]
-    public void CmdUnSetNetworkParent(NetworkIdentity identity) {
-      
-    }
-    
+    public void CmdUnSetNetworkParent(NetworkIdentity identity) { }
+
     [ClientRpc(channel = Channels.Reliable)]
     public void RpcUpdateNetworkParent(NetworkIdentity identity) {
       _parentTransform = identity.transform;
       _parentIdentity = identity;
-      Debug.Log("Set Parent Identity");
-      if (_parentIdentity) {
-        Debug.Log("Checking logs!");
-      }
     }
-    
+
     [ClientRpc(channel = Channels.Reliable)]
     public void RpcClearNetworkParent() {
       _parentTransform = null;
       _parentIdentity = null;
     }
-    
+
     public void SetParentOffset(Vector3? position, Quaternion? rotation, Vector3? scale) {
       _positionOffset = position;
       _rotationOffset = rotation;
@@ -76,7 +68,6 @@ namespace NetworkScripts {
 
     [ClientRpc(channel = Channels.Unreliable)]
     void RpcServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
-      Debug.Log($"Got offest position!{position}");
       SetParentOffset(position, rotation, scale);
     }
 
@@ -91,78 +82,76 @@ namespace NetworkScripts {
       }
     }
 
-
-    /* Called by CmdClientToServerSync() */
-    protected override void OnClientToServerSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
-      if (_parentIdentity) {
-        Nullable < Vector3 > newPositon = null;
-        if (_positionOffset != null) newPositon = _parentTransform.position + _positionOffset;
-
-
-        base.OnClientToServerSync(
-          position,
-          rotation,
-          scale
-         // _parentTransform.rotation * _parentOffset.RotationOffset,
-         // _parentTransform.localScale + _parentOffset.ScaleOffset
-        );
-      }
-      else {
-        base.OnClientToServerSync(position, rotation, scale);
-      }
-    }
-
-    private void LateUpdate() {
-      if (_parentIdentity && _parentTransform.hasChanged) {
-        _parentTransform.hasChanged = false;
-        if (isServer) {
-          UpdateParentOffset(); 
-          RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset);
-        }
-        //   Debug.Log($"parrentY:[{_parentTransform.position.y}] offsetY:[{_parentOffset.PositonOffset.y}] targetY:[{targetComponent.position.y}]");
-        Nullable < Vector3 > newPositon = null;
-        if (_positionOffset != null) newPositon = _parentTransform.position + _positionOffset;
-        
-        
-         base.OnServerToClientSync(
-           newPositon,
-           _parentTransform.rotation,
-           _parentTransform.localScale
-         );
-      }
-    }
-
+ 
+      
+    private bool _isParented = false;
+    
     /* Called by RpcServerToClientSync() */
     protected override void OnServerToClientSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
       if (_parentIdentity) {
+        
         if (isServer) {
-          UpdateParentOffset(); 
+          UpdateParentOffset();
           RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset);
         }
-        Nullable < Vector3 > newPositon = null;
-        if (_positionOffset != null) newPositon = _parentTransform.position + _positionOffset;
-        base.OnServerToClientSync(
-          newPositon,
-          rotation,
-          scale
-        );
+       
+      
+        if (!_isParented && _positionOffset.HasValue && !isServer) {
+          Vector3 _localOffset = targetComponent.position - _parentTransform.position;
+          OnTeleport((Vector3)_localOffset);
+          targetComponent.position = targetComponent.position + _localOffset;
+          targetComponent.localPosition = _parentTransform.position + _localOffset;
+          base.OnServerToClientSync(
+            _localOffset,
+            rotation,
+            scale
+          ); 
+          _isParented = true;
+        }
+        else {
+          base.OnServerToClientSync(
+            _positionOffset,
+            rotation,
+            scale
+          ); 
+        }
+        
+       
+        
       }
       else {
-        base.OnServerToClientSync(position, rotation, scale); 
+        if (_isParented) {
+          if (position.HasValue) {
+            OnTeleport((Vector3)position);  
+            targetComponent.position = (Vector3)position;
+            targetComponent.localPosition = (Vector3)position;
+          }
+          base.OnServerToClientSync(
+            position, 
+            rotation, 
+            scale
+            );
+          _isParented = false;
+        } 
+          base.OnServerToClientSync(position, rotation, scale);
       }
     }
 
-
-    // If you need this template to reference a child target,
-    // replace the line above with the code below.
-
-    /*
-    [Header("Target")]
-    public Transform target;
-
-    protected override Transform targetComponent => target;
-    */
-
+    private Vector3 lastKnownPosition;
+    protected override void ApplySnapshot(NTSnapshot start, NTSnapshot goal, NTSnapshot interpolated) {
+      if (_parentIdentity && _isParented) {
+        interpolated.position += _parentTransform.position;
+         goal.position += _parentTransform.position;
+         lastKnownPosition = _parentTransform.position;
+      }
+      else {
+        if (_isParented) {
+          interpolated.position += lastKnownPosition;
+          goal.position += lastKnownPosition;
+        }
+      }
+      base.ApplySnapshot(start, goal, interpolated);
+    }
   #region Unity Callbacks
 
     protected override void OnValidate() {
@@ -236,15 +225,7 @@ namespace NetworkScripts {
     protected override NTSnapshot ConstructSnapshot() {
       return base.ConstructSnapshot();
     }
-
-    /// <summary>
-    /// localPosition, localRotation, and localScale are set here:
-    /// interpolated values are used if interpolation is enabled.
-    /// goal values are used if interpolation is disabled.
-    /// </summary>
-    protected override void ApplySnapshot(NTSnapshot start, NTSnapshot goal, NTSnapshot interpolated) {
-      base.ApplySnapshot(start, goal, interpolated);
-    }
+    
 
     #if onlySyncOnChange_BANDWIDTH_SAVING
 

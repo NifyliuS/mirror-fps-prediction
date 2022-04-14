@@ -94,7 +94,7 @@ MonoBehaviour:
   bufferSizeLimit: 64
   catchupThreshold: 4
   catchupMultiplier: 0.1
-  onlySyncOnChange: 1
+  onlySyncOnChange: 0
   bufferResetMultiplier: 5
   positionSensitivity: 0.01
   rotationSensitivity: 0.01
@@ -102,8 +102,6 @@ MonoBehaviour:
   showGizmos: 0
   showOverlay: 0
   overlayColor: {r: 0, g: 0, b: 0, a: 0.5}
-  _parentTransform: {fileID: 0}
-  _parentIdentity: {fileID: 0}
 --- !u!54 &3510978818144757826
 Rigidbody:
   m_ObjectHideFlags: 0
