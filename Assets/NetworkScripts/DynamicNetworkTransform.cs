@@ -31,21 +31,22 @@ namespace NetworkScripts {
   #region Initialization
 
     private IEnumerator ResolveIdentity(uint newNetId) {
-      while (syncVirtualParent && !_parentIdentity) {
+      while (syncVirtualParent && !_parentIdentity && netId != 0) {
         if (NetworkClient.spawned.TryGetValue(newNetId, out _parentIdentity)) ;
         yield return null;
       }
     }
 
     public override bool OnSerialize(NetworkWriter writer, bool initialState) {
-      if (initialState && syncVirtualParent) writer.WriteUInt(_parentIdentity.netId);
+      if (initialState && syncVirtualParent) writer.WriteUInt(_parentIdentity ? _parentIdentity.netId : (uint) 0);
       return base.OnSerialize(writer, initialState);
     }
 
     public override void OnDeserialize(NetworkReader reader, bool initialState) {
       //pass the netId, and then on client you'd need a coroutine to keep checking NetworkClient.spawned until it's there inside a loop with a yield return null
       if (initialState && syncVirtualParent) {
-        StartCoroutine(ResolveIdentity(reader.ReadUInt()));
+        uint netId = reader.ReadUInt();
+        StartCoroutine(ResolveIdentity(netId));
       }
 
       base.OnDeserialize(reader, initialState);
@@ -197,13 +198,11 @@ namespace NetworkScripts {
     protected override void ApplySnapshot(NTSnapshot start, NTSnapshot goal, NTSnapshot interpolated) {
       if (_isParentActive) {
         var (position, rotation, scale) = GetParentPosition();
-        interpolated.position += position;
-        interpolated.rotation *= rotation; //TODO: check rotation
-        // interpolated.scale += scale; //TODO: fix scale
+        interpolated.position = rotation * interpolated.position + position;
+        interpolated.rotation *= rotation;
 
-        goal.position += position;
-        goal.rotation *= rotation; //TODO: check rotation
-        // goal.scale += scale; //TODO: fix scale
+        goal.position = rotation * (goal.position) + position;
+        goal.rotation *= rotation;
       }
 
       base.ApplySnapshot(start, goal, interpolated);
