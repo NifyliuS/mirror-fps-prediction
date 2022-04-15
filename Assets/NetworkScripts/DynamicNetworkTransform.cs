@@ -28,11 +28,6 @@ namespace NetworkScripts {
     [SerializeField] private Nullable<Quaternion> _rotationOffset = null;
     [SerializeField] private Nullable<Vector3>    _scaleOffset    = null;
 
-    private Nullable<Vector3>    _positionOffsetDefer       = null;
-    private Nullable<Quaternion> _rotationOffsetDefer       = null;
-    private Nullable<Vector3>    _scaleOffsetDefer          = null;
-    private bool                 _deferServerToClientQueued = false;
-
   #region Initialization
 
     private void ApplyInitialTransformState() {
@@ -171,89 +166,50 @@ namespace NetworkScripts {
   #endregion
 
 
-    private void DeferServerToClientSyncFrame(Vector3? position, Quaternion? rotation, Vector3? scale) {
-      _positionOffsetDefer = position;
-      _rotationOffsetDefer = rotation;
-      _scaleOffsetDefer = scale;
-      _deferServerToClientQueued = true;
+    private void ActivateParent() {
+      Reset();
+      _isParentActive = true;
+      base.OnServerToClientSync(
+        targetComponent.position - _parentIdentity.transform.position,
+        targetComponent.rotation * Quaternion.Inverse(_parentIdentity.transform.rotation),
+        GetScaleOffset(targetComponent.localScale, _parentIdentity.transform.localScale)
+      );
     }
 
-    private void ClearDeferServerToClientSyncFrame() {
-      _positionOffsetDefer = null;
-      _rotationOffsetDefer = null;
-      _scaleOffsetDefer = null;
-      _deferServerToClientQueued = false;
+    private void DeactivateParent() {
+      Reset();
+      _isParentActive = false;
+      base.OnServerToClientSync(
+        targetComponent.localPosition,
+        targetComponent.localRotation,
+        targetComponent.localScale
+      );
     }
 
-    private void LateUpdate() {
-      if (_deferServerToClientQueued) {
-        base.OnServerToClientSync(
-          _positionOffsetDefer,
-          _rotationOffsetDefer,
-          _scaleOffsetDefer
-        ); 
+    private void UpdateOffsetState() {
+      if (_parentIdentity && isServer) {
+        UpdateParentOffset();
+        RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset);
       }
-      ClearDeferServerToClientSyncFrame();
     }
 
     /* Called by RpcServerToClientSync() */
     protected override void OnServerToClientSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
-      if (_parentIdentity) {
-        if (isServer) {
-          UpdateParentOffset();
-          RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset);
-        }
-
-
-        if (!_isParentActive && _positionOffset.HasValue && !isServer) {
-          Vector3 _localOffset = targetComponent.position - _parentIdentity.transform.position;
-          OnTeleport((Vector3) _localOffset);
-          targetComponent.position = targetComponent.position + _localOffset;
-          targetComponent.localPosition = _parentIdentity.transform.position + _localOffset;
-          base.OnServerToClientSync(
-            _localOffset,
-            _rotationOffset,
-            scale
-          );
-          _isParentActive = true;
-          // DeferServerToClientSyncFrame(
-          //   _positionOffset,
-          //   _rotationOffset,
-          //   _scaleOffset
-          // );
-        }
-        else {
-          base.OnServerToClientSync(
-            _positionOffset,
-            _rotationOffset,
-            _scaleOffset
-          );
-        }
+      UpdateOffsetState();
+      if (!_parentIdentity) {
+        if (!_isParentActive) base.OnServerToClientSync(position, rotation, scale);
+        else DeactivateParent();
       }
       else {
-        if (_isParentActive) {
-          if (position.HasValue) {
-            OnTeleport((Vector3) position);
-            targetComponent.position = (Vector3) position;
-            targetComponent.localPosition = (Vector3) position;
-          }
-
-          base.OnServerToClientSync(
-            position,
-            rotation,
-            scale
-          );
-          _isParentActive = false;
-        }
-
-        base.OnServerToClientSync(position, rotation, scale);
+        if (_isParentActive) base.OnServerToClientSync(_positionOffset, _rotationOffset, _scaleOffset);
+        else ActivateParent();
       }
     }
 
 
   #region Unity Callbacks
 
-    private (Vector3, Quaternion, Vector3) GetParentPosition() {
+    private (Vector3, Quaternion, Vector3) GetParentOffsetPosition() {
       if (_parentIdentity) {
         _parentPosition = _parentIdentity.transform.position;
         _parentRotation = _parentIdentity.transform.rotation;
@@ -265,7 +221,7 @@ namespace NetworkScripts {
 
     protected override void ApplySnapshot(NTSnapshot start, NTSnapshot goal, NTSnapshot interpolated) {
       if (_isParentActive) {
-        var (position, rotation, scale) = GetParentPosition();
+        var (position, rotation, scale) = GetParentOffsetPosition();
         interpolated.position = rotation * interpolated.position + position;
         interpolated.rotation *= rotation;
         interpolated.scale = Vector3.Scale(scale, interpolated.scale);

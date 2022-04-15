@@ -99,9 +99,10 @@ MonoBehaviour:
   positionSensitivity: 0.01
   rotationSensitivity: 0.01
   scaleSensitivity: 0.01
-  showGizmos: 0
+  showGizmos: 1
   showOverlay: 0
   overlayColor: {r: 0, g: 0, b: 0, a: 0.5}
+  syncVirtualParent: 1
 --- !u!54 &3510978818144757826
 Rigidbody:
   m_ObjectHideFlags: 0
