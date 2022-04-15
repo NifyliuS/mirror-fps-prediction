@@ -1,7 +1,7 @@
 #define onlySyncOnChange_BANDWIDTH_SAVING
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
+using System.Collections;
 using UnityEngine;
 using Mirror;
 using UnityEngine.Animations;
@@ -14,98 +14,153 @@ namespace NetworkScripts {
   public class DynamicNetworkTransform : NetworkTransformBase {
     protected override Transform       targetComponent        => transform;
     public             NetworkIdentity ParentNetworkIdentity  => _parentIdentity;
-    public             Transform       ParentNetworkTransform => _parentTransform;
+    public             Transform       ParentNetworkTransform => _parentIdentity ? _parentIdentity.transform : null;
 
-    private Transform       _parentTransform;
-    [SyncVar]private NetworkIdentity _parentIdentity;
+    public  bool            syncVirtualParent = true;
+    private NetworkIdentity _parentIdentity;
 
     [SerializeField] private Nullable<Vector3>    _positionOffset = null;
     [SerializeField] private Nullable<Quaternion> _rotationOffset = null;
     [SerializeField] private Nullable<Vector3>    _scaleOffset    = null;
 
-    public void SetNetworkTransformParent(NetworkIdentity identity) {
-      _parentTransform = identity.transform;
-      _parentIdentity = identity;
-      UpdateParentOffset();
-      RpcUpdateNetworkParent(identity);
+  #region Initialization
+    private IEnumerator ResolveIdentity(uint newNetId)
+    {
+      while (syncVirtualParent && !_parentIdentity)
+      {
+        if (NetworkClient.spawned.TryGetValue(newNetId, out _parentIdentity));
+        yield return null;
+      }
+    }
+    
+    public override bool OnSerialize(NetworkWriter writer, bool initialState) {
+      if (initialState && syncVirtualParent) writer.WriteUInt(_parentIdentity.netId);
+      return base.OnSerialize(writer, initialState);
     }
 
-    public void UnSetNetworkTransformParent() {
-      _parentTransform = null;
-      _parentIdentity = null;
-      RpcClearNetworkParent();
+    public override void OnDeserialize(NetworkReader reader, bool initialState) {
+      //pass the netId, and then on client you'd need a coroutine to keep checking NetworkClient.spawned until it's there inside a loop with a yield return null
+      if (initialState && syncVirtualParent) {
+        StartCoroutine(ResolveIdentity(reader.ReadUInt()));
+      }
+      base.OnDeserialize(reader, initialState);
     }
+    
+  #endregion
+    
+  #region Client RPCs
 
-    [Command(channel = Channels.Reliable)]
-    public void CmdSetNetworkParent(NetworkIdentity identity) { }
-
-    [Command(channel = Channels.Reliable)]
-    public void CmdUnSetNetworkParent(NetworkIdentity identity) { }
-
-    [ClientRpc(channel = Channels.Reliable)]
+    [ClientRpc(channel = Channels.Reliable)] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcUpdateNetworkParent(NetworkIdentity identity) {
-      _parentTransform = identity.transform;
       _parentIdentity = identity;
     }
 
-    [ClientRpc(channel = Channels.Reliable)]
+    [ClientRpc(channel = Channels.Reliable)]  //We want to make sure the NETID is sent since it is a one-off event
     public void RpcClearNetworkParent() {
-      _parentTransform = null;
       _parentIdentity = null;
-    }
-
-    public void SetParentOffset(Vector3? position, Quaternion? rotation, Vector3? scale) {
-      _positionOffset = position;
-      _rotationOffset = rotation;
-      _scaleOffset = scale;
-    }
-
-
-    [Command(channel = Channels.Unreliable)]
-    void CmdClientToServerParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
-      //TODO: Add client authority integration
     }
 
     [ClientRpc(channel = Channels.Unreliable)]
     void RpcServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
       SetParentOffset(position, rotation, scale);
     }
+  #endregion 
+    
+  #region Server CMDs
 
+    [Command(channel = Channels.Reliable)]
+    public void CmdSetNetworkParent(NetworkIdentity identity) {
+      //TODO: add client side parent setting
+    }
+
+    [Command(channel = Channels.Reliable)]
+    public void CmdUnSetNetworkParent(NetworkIdentity identity) {
+      //TODO: add client side parent setting
+    }
+    
+    [Command(channel = Channels.Unreliable)]
+    void CmdClientToServerParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
+      //TODO: Add client authority integration
+    }
+
+    
+  #endregion
+
+  #region Server
+
+    
+
+  #endregion
+    
+    
+  #region Client
+
+    
+
+  #endregion
+
+  #region Server + Client
 
     public void UpdateParentOffset() {
       if (_parentIdentity) {
         SetParentOffset(
-          targetComponent.position - _parentTransform.position,
-          targetComponent.rotation * Quaternion.Inverse(_parentTransform.rotation),
-          targetComponent.localScale - _parentTransform.localScale
+          targetComponent.position - _parentIdentity.transform.position,
+          targetComponent.rotation * Quaternion.Inverse(_parentIdentity.transform.rotation),
+          targetComponent.localScale - _parentIdentity.transform.localScale
         );
       }
     }
+    
+    public void SetNetworkTransformParent(NetworkIdentity identity) {
+      _parentIdentity = identity;
+      RpcUpdateNetworkParent(identity);
+      UpdateParentOffset();
+    }
+
+    public void UnSetNetworkTransformParent() {
+      _parentIdentity = null;
+      RpcClearNetworkParent();
+    }
+    public void SetParentOffset(Vector3? position, Quaternion? rotation, Vector3? scale) {
+      _positionOffset = position;
+      _rotationOffset = rotation;
+      _scaleOffset = scale;
+    }
+
+    
+  #endregion
+    
+
+
 
  
-      
+
+
+
+   
+
+
     private bool _isParented = false;
-    
+
     /* Called by RpcServerToClientSync() */
     protected override void OnServerToClientSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
       if (_parentIdentity) {
-        
         if (isServer) {
           UpdateParentOffset();
           RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset);
         }
-       
-      
+
+
         if (!_isParented && _positionOffset.HasValue && !isServer) {
           Vector3 _localOffset = targetComponent.position - _parentTransform.position;
-          OnTeleport((Vector3)_localOffset);
+          OnTeleport((Vector3) _localOffset);
           targetComponent.position = targetComponent.position + _localOffset;
           targetComponent.localPosition = _parentTransform.position + _localOffset;
           base.OnServerToClientSync(
             _localOffset,
             rotation,
             scale
-          ); 
+          );
           _isParented = true;
         }
         else {
@@ -113,36 +168,36 @@ namespace NetworkScripts {
             _positionOffset,
             rotation,
             scale
-          ); 
+          );
         }
-        
-       
-        
       }
       else {
         if (_isParented) {
           if (position.HasValue) {
-            OnTeleport((Vector3)position);  
-            targetComponent.position = (Vector3)position;
-            targetComponent.localPosition = (Vector3)position;
+            OnTeleport((Vector3) position);
+            targetComponent.position = (Vector3) position;
+            targetComponent.localPosition = (Vector3) position;
           }
+
           base.OnServerToClientSync(
-            position, 
-            rotation, 
+            position,
+            rotation,
             scale
-            );
+          );
           _isParented = false;
-        } 
-          base.OnServerToClientSync(position, rotation, scale);
+        }
+
+        base.OnServerToClientSync(position, rotation, scale);
       }
     }
 
     private Vector3 lastKnownPosition;
+
     protected override void ApplySnapshot(NTSnapshot start, NTSnapshot goal, NTSnapshot interpolated) {
       if (_parentIdentity && _isParented) {
         interpolated.position += _parentTransform.position;
-         goal.position += _parentTransform.position;
-         lastKnownPosition = _parentTransform.position;
+        goal.position += _parentTransform.position;
+        lastKnownPosition = _parentTransform.position;
       }
       else {
         if (_isParented) {
@@ -150,8 +205,10 @@ namespace NetworkScripts {
           goal.position += lastKnownPosition;
         }
       }
+
       base.ApplySnapshot(start, goal, interpolated);
     }
+
   #region Unity Callbacks
 
     protected override void OnValidate() {
@@ -225,7 +282,7 @@ namespace NetworkScripts {
     protected override NTSnapshot ConstructSnapshot() {
       return base.ConstructSnapshot();
     }
-    
+
 
     #if onlySyncOnChange_BANDWIDTH_SAVING
 
