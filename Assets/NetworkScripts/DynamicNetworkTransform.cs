@@ -23,6 +23,7 @@ namespace NetworkScripts {
     private Vector3         _parentPosition;
     private Quaternion      _parentRotation;
     private Vector3         _parentScale;
+    private Vector3         _originalScale;
 
     [SerializeField] private Nullable<Vector3>    _positionOffset = null;
     [SerializeField] private Nullable<Quaternion> _rotationOffset = null;
@@ -169,6 +170,7 @@ namespace NetworkScripts {
     private void ActivateParent() {
       Reset();
       _isParentActive = true;
+      _originalScale = targetComponent.localScale;
       base.OnServerToClientSync(
         targetComponent.position - _parentIdentity.transform.position,
         targetComponent.rotation * Quaternion.Inverse(_parentIdentity.transform.rotation),
@@ -176,14 +178,16 @@ namespace NetworkScripts {
       );
     }
 
-    private void DeactivateParent() {
+    private void DeactivateParent(Vector3? scale) {
       Reset();
       _isParentActive = false;
-      base.OnServerToClientSync(
-        targetComponent.localPosition,
-        targetComponent.localRotation,
-        targetComponent.localScale
-      );
+      if (_scaleOffset.HasValue) {
+        base.OnServerToClientSync(
+          targetComponent.localPosition,
+          targetComponent.localRotation,
+          _originalScale
+        );
+      }
     }
 
     private void UpdateOffsetState() {
@@ -198,7 +202,7 @@ namespace NetworkScripts {
       UpdateOffsetState();
       if (!_parentIdentity) {
         if (!_isParentActive) base.OnServerToClientSync(position, rotation, scale);
-        else DeactivateParent();
+        else DeactivateParent(scale);
       }
       else {
         if (_isParentActive) base.OnServerToClientSync(_positionOffset, _rotationOffset, _scaleOffset);
