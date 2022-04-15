@@ -28,11 +28,11 @@ namespace PlayerScripts {
 
     private void InstantiateCharacters() {
       if (isLocalPlayer) {
-        _LocalPlayer = Instantiate(CharacterPrefab, new Vector3(transform.position.x, transform.position.y, transform.position.z), Quaternion.identity);
+        _LocalPlayer = Instantiate(CharacterPrefab, transform.position, transform.rotation);
         _LocalPlayer.transform.SetParent(null);
       }
 
-      _RemotePlayer = Instantiate(CharacterPrefab, new Vector3(transform.position.x, transform.position.y, transform.position.z), Quaternion.identity);
+      _RemotePlayer = Instantiate(CharacterPrefab, transform.position, transform.rotation);
       _RemotePlayer.transform.SetParent(transform);
     }
 

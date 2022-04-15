@@ -30,26 +30,51 @@ namespace NetworkScripts {
 
   #region Initialization
 
+    private void ApplyInitialTransformState() {
+      Reset();
+      Debug.Log(_rotationOffset);
+      //if (_positionOffset.HasValue) targetComponent.position = (Vector3) _positionOffset;
+      //if (_rotationOffset.HasValue) targetComponent.rotation = (Quaternion) _rotationOffset;
+      //if (_scaleOffset.HasValue) targetComponent.localScale = (Vector3) _scaleOffset;
+      // base.OnServerToClientSync(
+      //   targetComponent.position,
+      //   targetComponent.rotation,
+      //   targetComponent.localScale
+      // );
+      
+    }
+
     private IEnumerator ResolveIdentity(uint newNetId) {
       while (syncVirtualParent && !_parentIdentity && netId != 0) {
         if (NetworkClient.spawned.TryGetValue(newNetId, out _parentIdentity)) ;
+        if (_parentIdentity) _isParentActive = true;;
         yield return null;
       }
     }
 
     public override bool OnSerialize(NetworkWriter writer, bool initialState) {
-      if (initialState && syncVirtualParent) writer.WriteUInt(_parentIdentity ? _parentIdentity.netId : (uint) 0);
-      return base.OnSerialize(writer, initialState);
+      base.OnSerialize(writer, initialState);
+      if (initialState) {
+        if (syncPosition) writer.WriteVector3(_positionOffset.HasValue ? (Vector3) _positionOffset : new Vector3(0, 0, 0));
+        if (syncRotation) writer.WriteQuaternion(_rotationOffset.HasValue ? (Quaternion) _rotationOffset : new Quaternion());
+        if (syncScale) writer.WriteVector3(_scaleOffset.HasValue ? (Vector3) _scaleOffset : new Vector3(1, 1, 1));
+        if (syncVirtualParent) writer.WriteUInt(_parentIdentity ? _parentIdentity.netId : (uint) 0);
+        return true;
+      }
+
+      return false;
     }
 
     public override void OnDeserialize(NetworkReader reader, bool initialState) {
       //pass the netId, and then on client you'd need a coroutine to keep checking NetworkClient.spawned until it's there inside a loop with a yield return null
-      if (initialState && syncVirtualParent) {
-        uint netId = reader.ReadUInt();
-        StartCoroutine(ResolveIdentity(netId));
-      }
-
       base.OnDeserialize(reader, initialState);
+      
+      if (initialState) {
+        if (syncPosition) _positionOffset = reader.ReadVector3();
+        if (syncRotation) _rotationOffset = reader.ReadQuaternion();
+        if (syncScale) _scaleOffset = reader.ReadVector3();
+        if (syncVirtualParent) StartCoroutine(ResolveIdentity(reader.ReadUInt()));
+      }
     }
 
   #endregion
@@ -103,12 +128,20 @@ namespace NetworkScripts {
 
   #region Server + Client
 
+    private Vector3 GetScaleOffset(Vector3 targetScale, Vector3 parentScale) {
+      return new Vector3(
+        targetScale.x / parentScale.x,
+        targetScale.y / parentScale.y,
+        targetScale.z / parentScale.z
+      );
+    }
+
     public void UpdateParentOffset() {
       if (_parentIdentity) {
         SetParentOffset(
           targetComponent.position - _parentIdentity.transform.position,
           targetComponent.rotation * Quaternion.Inverse(_parentIdentity.transform.rotation),
-          targetComponent.localScale - _parentIdentity.transform.localScale
+          GetScaleOffset(targetComponent.localScale, _parentIdentity.transform.localScale)
         );
       }
     }
@@ -149,7 +182,7 @@ namespace NetworkScripts {
           targetComponent.localPosition = _parentIdentity.transform.position + _localOffset;
           base.OnServerToClientSync(
             _localOffset,
-            rotation,
+            _rotationOffset,
             scale
           );
           _isParentActive = true;
@@ -157,8 +190,8 @@ namespace NetworkScripts {
         else {
           base.OnServerToClientSync(
             _positionOffset,
-            rotation,
-            scale
+            _rotationOffset, 
+            _scaleOffset
           );
         }
       }
