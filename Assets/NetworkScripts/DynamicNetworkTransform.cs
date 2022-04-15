@@ -200,9 +200,11 @@ namespace NetworkScripts {
         var (position, rotation, scale) = GetParentPosition();
         interpolated.position = rotation * interpolated.position + position;
         interpolated.rotation *= rotation;
+        interpolated.scale = Vector3.Scale(scale, interpolated.scale);
 
         goal.position = rotation * (goal.position) + position;
         goal.rotation *= rotation;
+        goal.scale = Vector3.Scale(scale, goal.scale);
       }
 
       base.ApplySnapshot(start, goal, interpolated);
