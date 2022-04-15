@@ -28,6 +28,11 @@ namespace NetworkScripts {
     [SerializeField] private Nullable<Quaternion> _rotationOffset = null;
     [SerializeField] private Nullable<Vector3>    _scaleOffset    = null;
 
+    private Nullable<Vector3>    _positionOffsetDefer       = null;
+    private Nullable<Quaternion> _rotationOffsetDefer       = null;
+    private Nullable<Vector3>    _scaleOffsetDefer          = null;
+    private bool                 _deferServerToClientQueued = false;
+
   #region Initialization
 
     private void ApplyInitialTransformState() {
@@ -41,13 +46,13 @@ namespace NetworkScripts {
       //   targetComponent.rotation,
       //   targetComponent.localScale
       // );
-      
     }
 
     private IEnumerator ResolveIdentity(uint newNetId) {
       while (syncVirtualParent && !_parentIdentity && netId != 0) {
         if (NetworkClient.spawned.TryGetValue(newNetId, out _parentIdentity)) ;
-        if (_parentIdentity) _isParentActive = true;;
+        if (_parentIdentity) _isParentActive = true;
+        ;
         yield return null;
       }
     }
@@ -68,7 +73,7 @@ namespace NetworkScripts {
     public override void OnDeserialize(NetworkReader reader, bool initialState) {
       //pass the netId, and then on client you'd need a coroutine to keep checking NetworkClient.spawned until it's there inside a loop with a yield return null
       base.OnDeserialize(reader, initialState);
-      
+
       if (initialState) {
         if (syncPosition) _positionOffset = reader.ReadVector3();
         if (syncRotation) _rotationOffset = reader.ReadQuaternion();
@@ -166,6 +171,31 @@ namespace NetworkScripts {
   #endregion
 
 
+    private void DeferServerToClientSyncFrame(Vector3? position, Quaternion? rotation, Vector3? scale) {
+      _positionOffsetDefer = position;
+      _rotationOffsetDefer = rotation;
+      _scaleOffsetDefer = scale;
+      _deferServerToClientQueued = true;
+    }
+
+    private void ClearDeferServerToClientSyncFrame() {
+      _positionOffsetDefer = null;
+      _rotationOffsetDefer = null;
+      _scaleOffsetDefer = null;
+      _deferServerToClientQueued = false;
+    }
+
+    private void LateUpdate() {
+      if (_deferServerToClientQueued) {
+        base.OnServerToClientSync(
+          _positionOffsetDefer,
+          _rotationOffsetDefer,
+          _scaleOffsetDefer
+        ); 
+      }
+      ClearDeferServerToClientSyncFrame();
+    }
+
     /* Called by RpcServerToClientSync() */
     protected override void OnServerToClientSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
       if (_parentIdentity) {
@@ -186,11 +216,16 @@ namespace NetworkScripts {
             scale
           );
           _isParentActive = true;
+          // DeferServerToClientSyncFrame(
+          //   _positionOffset,
+          //   _rotationOffset,
+          //   _scaleOffset
+          // );
         }
         else {
           base.OnServerToClientSync(
             _positionOffset,
-            _rotationOffset, 
+            _rotationOffset,
             _scaleOffset
           );
         }
