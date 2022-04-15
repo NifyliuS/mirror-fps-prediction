@@ -16,23 +16,27 @@ namespace NetworkScripts {
     public             NetworkIdentity ParentNetworkIdentity  => _parentIdentity;
     public             Transform       ParentNetworkTransform => _parentIdentity ? _parentIdentity.transform : null;
 
-    public  bool            syncVirtualParent = true;
+    public bool syncVirtualParent = true;
+
     private NetworkIdentity _parentIdentity;
+    private bool            _isParentActive = false;
+    private Vector3         _parentPosition;
+    private Quaternion      _parentRotation;
+    private Vector3         _parentScale;
 
     [SerializeField] private Nullable<Vector3>    _positionOffset = null;
     [SerializeField] private Nullable<Quaternion> _rotationOffset = null;
     [SerializeField] private Nullable<Vector3>    _scaleOffset    = null;
 
   #region Initialization
-    private IEnumerator ResolveIdentity(uint newNetId)
-    {
-      while (syncVirtualParent && !_parentIdentity)
-      {
-        if (NetworkClient.spawned.TryGetValue(newNetId, out _parentIdentity));
+
+    private IEnumerator ResolveIdentity(uint newNetId) {
+      while (syncVirtualParent && !_parentIdentity) {
+        if (NetworkClient.spawned.TryGetValue(newNetId, out _parentIdentity)) ;
         yield return null;
       }
     }
-    
+
     public override bool OnSerialize(NetworkWriter writer, bool initialState) {
       if (initialState && syncVirtualParent) writer.WriteUInt(_parentIdentity.netId);
       return base.OnSerialize(writer, initialState);
@@ -43,11 +47,12 @@ namespace NetworkScripts {
       if (initialState && syncVirtualParent) {
         StartCoroutine(ResolveIdentity(reader.ReadUInt()));
       }
+
       base.OnDeserialize(reader, initialState);
     }
-    
+
   #endregion
-    
+
   #region Client RPCs
 
     [ClientRpc(channel = Channels.Reliable)] //We want to make sure the NETID is sent since it is a one-off event
@@ -55,7 +60,7 @@ namespace NetworkScripts {
       _parentIdentity = identity;
     }
 
-    [ClientRpc(channel = Channels.Reliable)]  //We want to make sure the NETID is sent since it is a one-off event
+    [ClientRpc(channel = Channels.Reliable)] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcClearNetworkParent() {
       _parentIdentity = null;
     }
@@ -64,8 +69,9 @@ namespace NetworkScripts {
     void RpcServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
       SetParentOffset(position, rotation, scale);
     }
-  #endregion 
-    
+
+  #endregion
+
   #region Server CMDs
 
     [Command(channel = Channels.Reliable)]
@@ -77,25 +83,20 @@ namespace NetworkScripts {
     public void CmdUnSetNetworkParent(NetworkIdentity identity) {
       //TODO: add client side parent setting
     }
-    
+
     [Command(channel = Channels.Unreliable)]
     void CmdClientToServerParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
       //TODO: Add client authority integration
     }
 
-    
   #endregion
 
   #region Server
 
-    
-
   #endregion
-    
-    
-  #region Client
 
-    
+
+  #region Client
 
   #endregion
 
@@ -110,7 +111,7 @@ namespace NetworkScripts {
         );
       }
     }
-    
+
     public void SetNetworkTransformParent(NetworkIdentity identity) {
       _parentIdentity = identity;
       RpcUpdateNetworkParent(identity);
@@ -121,26 +122,15 @@ namespace NetworkScripts {
       _parentIdentity = null;
       RpcClearNetworkParent();
     }
+
     public void SetParentOffset(Vector3? position, Quaternion? rotation, Vector3? scale) {
       _positionOffset = position;
       _rotationOffset = rotation;
       _scaleOffset = scale;
     }
 
-    
   #endregion
-    
 
-
-
- 
-
-
-
-   
-
-
-    private bool _isParented = false;
 
     /* Called by RpcServerToClientSync() */
     protected override void OnServerToClientSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
@@ -151,17 +141,17 @@ namespace NetworkScripts {
         }
 
 
-        if (!_isParented && _positionOffset.HasValue && !isServer) {
-          Vector3 _localOffset = targetComponent.position - _parentTransform.position;
+        if (!_isParentActive && _positionOffset.HasValue && !isServer) {
+          Vector3 _localOffset = targetComponent.position - _parentIdentity.transform.position;
           OnTeleport((Vector3) _localOffset);
           targetComponent.position = targetComponent.position + _localOffset;
-          targetComponent.localPosition = _parentTransform.position + _localOffset;
+          targetComponent.localPosition = _parentIdentity.transform.position + _localOffset;
           base.OnServerToClientSync(
             _localOffset,
             rotation,
             scale
           );
-          _isParented = true;
+          _isParentActive = true;
         }
         else {
           base.OnServerToClientSync(
@@ -172,7 +162,7 @@ namespace NetworkScripts {
         }
       }
       else {
-        if (_isParented) {
+        if (_isParentActive) {
           if (position.HasValue) {
             OnTeleport((Vector3) position);
             targetComponent.position = (Vector3) position;
@@ -184,32 +174,41 @@ namespace NetworkScripts {
             rotation,
             scale
           );
-          _isParented = false;
+          _isParentActive = false;
         }
 
         base.OnServerToClientSync(position, rotation, scale);
       }
     }
 
-    private Vector3 lastKnownPosition;
+
+  #region Unity Callbacks
+
+    private (Vector3, Quaternion, Vector3) GetParentPosition() {
+      if (_parentIdentity) {
+        _parentPosition = _parentIdentity.transform.position;
+        _parentRotation = _parentIdentity.transform.rotation;
+        _parentScale = _parentIdentity.transform.localScale;
+      }
+
+      return (_parentPosition, _parentRotation, _parentScale);
+    }
 
     protected override void ApplySnapshot(NTSnapshot start, NTSnapshot goal, NTSnapshot interpolated) {
-      if (_parentIdentity && _isParented) {
-        interpolated.position += _parentTransform.position;
-        goal.position += _parentTransform.position;
-        lastKnownPosition = _parentTransform.position;
-      }
-      else {
-        if (_isParented) {
-          interpolated.position += lastKnownPosition;
-          goal.position += lastKnownPosition;
-        }
+      if (_isParentActive) {
+        var (position, rotation, scale) = GetParentPosition();
+        interpolated.position += position;
+        interpolated.rotation *= rotation; //TODO: check rotation
+        // interpolated.scale += scale; //TODO: fix scale
+
+        goal.position += position;
+        goal.rotation *= rotation; //TODO: check rotation
+        // goal.scale += scale; //TODO: fix scale
       }
 
       base.ApplySnapshot(start, goal, interpolated);
     }
 
-  #region Unity Callbacks
 
     protected override void OnValidate() {
       base.OnValidate();
@@ -228,94 +227,6 @@ namespace NetworkScripts {
     protected override void OnDisable() {
       base.OnDisable();
     }
-
-    /// <summary>
-    /// Buffers are cleared and interpolation times are reset to zero here.
-    /// This may be called when you are implementing some system of not sending
-    /// if nothing changed, or just plain resetting if you have not received data
-    /// for some time, as this will prevent a long interpolation period between old
-    /// and just received data, as it will look like a lag. Reset() should also be
-    /// called when authority is changed to another client or server, to prevent
-    /// old buffers bugging out the interpolation if authority is changed back.
-    /// </summary>
-    public override void Reset() {
-      base.Reset();
-    }
-
-  #endregion
-
-  #region NT Base Callbacks
-
-    /// <summary>
-    /// NTSnapshot struct is created from incoming data from server
-    /// and added to SnapshotInterpolation sorted list.
-    /// You may want to skip calling the base method for the local player
-    /// if doing client-side prediction, or perhaps pass altered values,
-    /// or compare the server data to local values and correct large differences.
-    /// </summary>
-    /// <summary>
-    /// NTSnapshot struct is created from incoming data from client
-    /// and added to SnapshotInterpolation sorted list.
-    /// You may want to implement anti-cheat checks here in client authority mode.
-    /// </summary>
-    /// <summary>
-    /// Called by both CmdTeleport and RpcTeleport on server and clients, respectively.
-    /// Here you can disable a Character Controller before calling the base method,
-    /// and re-enable it after the base method call to avoid conflicting with it.
-    /// </summary>
-    protected override void OnTeleport(Vector3 destination) {
-      base.OnTeleport(destination);
-    }
-
-    /// <summary>
-    /// Called by both CmdTeleport and RpcTeleport on server and clients, respectively.
-    /// Here you can disable a Character Controller before calling the base method,
-    /// and re-enable it after the base method call to avoid conflicting with it.
-    /// </summary>
-    protected override void OnTeleport(Vector3 destination, Quaternion rotation) {
-      base.OnTeleport(destination, rotation);
-    }
-
-    /// <summary>
-    /// NTSnapshot struct is created here
-    /// </summary>
-    protected override NTSnapshot ConstructSnapshot() {
-      return base.ConstructSnapshot();
-    }
-
-
-    #if onlySyncOnChange_BANDWIDTH_SAVING
-
-    /// <summary>
-    /// Returns true if position, rotation AND scale are unchanged, within given sensitivity range.
-    /// </summary>
-    protected override bool CompareSnapshots(NTSnapshot currentSnapshot) {
-      return base.CompareSnapshots(currentSnapshot);
-    }
-
-    #endif
-
-  #endregion
-
-
-  #region GUI
-
-    #if UNITY_EDITOR || DEVELOPMENT_BUILD
-    // OnGUI allocates even if it does nothing. avoid in release.
-
-    protected override void OnGUI() {
-      base.OnGUI();
-    }
-
-    protected override void DrawGizmos(SortedList<double, NTSnapshot> buffer) {
-      base.DrawGizmos(buffer);
-    }
-
-    protected override void OnDrawGizmos() {
-      base.OnDrawGizmos();
-    }
-
-    #endif
 
   #endregion
   }
