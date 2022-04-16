@@ -194,7 +194,6 @@ namespace NetworkScripts {
     private void ChangeParent() {
       _isParentChange = false;
       Reset();
-      Debug.Log($"[{targetComponent.localPosition}] [{_newParentIdentity.transform.position}]/[{_parentIdentity.transform.position}] = [{_positionOffset}] || [{_newParentIdentity.netId}]/[{_parentIdentity.netId}]");
       base.OnServerToClientSync(
         targetComponent.localPosition - _newParentIdentity.transform.position,
         targetComponent.localRotation * Quaternion.Inverse(_newParentIdentity.transform.rotation),
