@@ -25,7 +25,6 @@ namespace NetworkScripts {
     private Vector3         _parentScale;
     private Vector3         _originalScale;
     private bool            _isParentChange = false;
-    public  NetworkIdentity _newParentIdentity;
 
     [SerializeField] private Nullable<Vector3>    _positionOffset = null;
     [SerializeField] private Nullable<Quaternion> _rotationOffset = null;
@@ -79,12 +78,8 @@ namespace NetworkScripts {
     public void RpcUpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
       SetParentOffset(position, rotation, scale);
       _isParentChange = _parentIdentity && _parentIdentity.netId != identity.netId;
-      if (_isParentChange) {
-        _newParentIdentity = identity;
-      }
-      else {
-        _parentIdentity = identity;
-      }
+      if (_isParentChange) ChangeParent(identity);
+      else _parentIdentity = identity;
     }
 
     [ClientRpc(channel = Channels.Reliable)] //We want to make sure the NETID is sent since it is a one-off event
@@ -114,10 +109,11 @@ namespace NetworkScripts {
       Reset();
       _isParentActive = true;
       _originalScale = targetComponent.localScale;
+      var identityTransform = _parentIdentity.transform;
       base.OnServerToClientSync(
-        targetComponent.localPosition - _parentIdentity.transform.position,
-        targetComponent.localRotation * Quaternion.Inverse(_parentIdentity.transform.rotation),
-        GetScaleOffset(targetComponent.localScale, _parentIdentity.transform.localScale)
+        targetComponent.localPosition - identityTransform.position,
+        targetComponent.localRotation * Quaternion.Inverse(identityTransform.rotation),
+        GetScaleOffset(targetComponent.localScale, identityTransform.localScale)
       );
     }
 
@@ -131,15 +127,16 @@ namespace NetworkScripts {
       );
     }
 
-    private void ChangeParent() {
+    private void ChangeParent(NetworkIdentity newIdentity) {
       _isParentChange = false;
       Reset();
+      var newTransform = newIdentity.transform;
       base.OnServerToClientSync(
-        targetComponent.localPosition - _newParentIdentity.transform.position,
-        targetComponent.localRotation * Quaternion.Inverse(_newParentIdentity.transform.rotation),
-        GetScaleOffset(targetComponent.localScale, _newParentIdentity.transform.localScale)
+        targetComponent.localPosition - newTransform.position,
+        targetComponent.localRotation * Quaternion.Inverse(newTransform.rotation),
+        GetScaleOffset(targetComponent.localScale, newTransform.localScale)
       );
-      _parentIdentity = _newParentIdentity;
+      _parentIdentity = newIdentity;
     }
 
   #endregion
@@ -229,13 +226,12 @@ namespace NetworkScripts {
       }
 
       if (!_parentIdentity) {
+        base.OnServerToClientSync(position, rotation, scale);
         if (!_isParentActive) base.OnServerToClientSync(position, rotation, scale);
         else DeactivateParent();
       }
       else {
-        if (_isParentActive)
-          if (_isParentChange) ChangeParent();
-          else base.OnServerToClientSync(_positionOffset, _rotationOffset, _scaleOffset);
+        if (_isParentActive) base.OnServerToClientSync(_positionOffset, _rotationOffset, _scaleOffset);
         else ActivateParent();
       }
     }
