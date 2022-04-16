@@ -51,29 +51,29 @@ namespace PlayerScripts {
     }
 
 
-    private void Update() {
+    private void FixedUpdate() {
       if (Input.GetKey(KeyCode.Q)) {
-        transform.rotation *= Quaternion.Euler(0.1f, 0, 0);
+        transform.rotation *= Quaternion.Euler(0.5f, 0, 0);
       }
 
       if (Input.GetKey(KeyCode.E)) {
-        transform.rotation *= Quaternion.Euler(-0.1f, 0, 0);
+        transform.rotation *= Quaternion.Euler(-0.5f, 0, 0);
       }
 
       if (Input.GetKey(KeyCode.W)) {
-        transform.position = new Vector3(transform.position.x, transform.position.y + 0.01f, transform.position.z);
+        transform.position = new Vector3(transform.position.x, transform.position.y + 0.05f, transform.position.z);
       }
 
       if (Input.GetKey(KeyCode.S)) {
-        transform.position = new Vector3(transform.position.x, transform.position.y - 0.01f, transform.position.z);
+        transform.position = new Vector3(transform.position.x, transform.position.y - 0.05f, transform.position.z);
       }
 
       if (Input.GetKey(KeyCode.D)) {
-        transform.position = new Vector3(transform.position.x + 0.01f, transform.position.y, transform.position.z);
+        transform.position = new Vector3(transform.position.x + 0.05f, transform.position.y, transform.position.z);
       }
 
       if (Input.GetKey(KeyCode.A)) {
-        transform.position = new Vector3(transform.position.x - 0.01f, transform.position.y, transform.position.z);
+        transform.position = new Vector3(transform.position.x - 0.05f, transform.position.y, transform.position.z);
       }
     }
 

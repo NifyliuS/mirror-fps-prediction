@@ -18,37 +18,30 @@ namespace NetworkScripts {
 
     public bool syncVirtualParent = true;
 
-    private NetworkIdentity _parentIdentity;
+    public  NetworkIdentity _parentIdentity;
     private bool            _isParentActive = false;
     private Vector3         _parentPosition;
     private Quaternion      _parentRotation;
     private Vector3         _parentScale;
     private Vector3         _originalScale;
+    private bool            _isParentChange = false;
+    public  NetworkIdentity _newParentIdentity;
 
     [SerializeField] private Nullable<Vector3>    _positionOffset = null;
     [SerializeField] private Nullable<Quaternion> _rotationOffset = null;
     [SerializeField] private Nullable<Vector3>    _scaleOffset    = null;
 
-  #region Initialization
+    private Vector3    _oldParentPosition;
+    private Quaternion _oldParentRotation;
+    private Vector3    _oldParentScale;
 
-    private void ApplyInitialTransformState() {
-      Reset();
-      Debug.Log(_rotationOffset);
-      //if (_positionOffset.HasValue) targetComponent.position = (Vector3) _positionOffset;
-      //if (_rotationOffset.HasValue) targetComponent.rotation = (Quaternion) _rotationOffset;
-      //if (_scaleOffset.HasValue) targetComponent.localScale = (Vector3) _scaleOffset;
-      // base.OnServerToClientSync(
-      //   targetComponent.position,
-      //   targetComponent.rotation,
-      //   targetComponent.localScale
-      // );
-    }
+  #region Initialization
 
     private IEnumerator ResolveIdentity(uint newNetId) {
       while (syncVirtualParent && !_parentIdentity && netId != 0) {
         if (NetworkClient.spawned.TryGetValue(newNetId, out _parentIdentity)) ;
+        _originalScale = targetComponent.localScale;
         if (_parentIdentity) _isParentActive = true;
-        ;
         yield return null;
       }
     }
@@ -83,8 +76,15 @@ namespace NetworkScripts {
   #region Client RPCs
 
     [ClientRpc(channel = Channels.Reliable)] //We want to make sure the NETID is sent since it is a one-off event
-    public void RpcUpdateNetworkParent(NetworkIdentity identity) {
-      _parentIdentity = identity;
+    public void RpcUpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
+      SetParentOffset(position, rotation, scale);
+      _isParentChange = _parentIdentity && _parentIdentity.netId != identity.netId;
+      if (_isParentChange) {
+        _newParentIdentity = identity;
+      }
+      else {
+        _parentIdentity = identity;
+      }
     }
 
     [ClientRpc(channel = Channels.Reliable)] //We want to make sure the NETID is sent since it is a one-off event
@@ -93,7 +93,8 @@ namespace NetworkScripts {
     }
 
     [ClientRpc(channel = Channels.Unreliable)]
-    void RpcServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
+    void RpcServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale, uint netId) {
+      if (netId == 0 || _parentIdentity.netId != netId) return; //Disallow mixing offset positions from different parents - may happen due to using "Unreliable" channel
       SetParentOffset(position, rotation, scale);
     }
 
@@ -148,17 +149,19 @@ namespace NetworkScripts {
     }
 
     public void SetNetworkTransformParent(NetworkIdentity identity) {
+      if (_parentIdentity && _parentIdentity.netId == identity.netId) return;
       _parentIdentity = identity;
-      RpcUpdateNetworkParent(identity);
       UpdateParentOffset();
+      RpcUpdateNetworkParent(identity, _positionOffset, _rotationOffset, _scaleOffset);
     }
 
     public void UnSetNetworkTransformParent() {
+      if (!_parentIdentity) return;
       _parentIdentity = null;
       RpcClearNetworkParent();
     }
 
-    public void SetParentOffset(Vector3? position, Quaternion? rotation, Vector3? scale) {
+    private void SetParentOffset(Vector3? position, Quaternion? rotation, Vector3? scale) {
       _positionOffset = position;
       _rotationOffset = rotation;
       _scaleOffset = scale;
@@ -172,28 +175,38 @@ namespace NetworkScripts {
       _isParentActive = true;
       _originalScale = targetComponent.localScale;
       base.OnServerToClientSync(
-        targetComponent.position - _parentIdentity.transform.position,
-        targetComponent.rotation * Quaternion.Inverse(_parentIdentity.transform.rotation),
+        targetComponent.localPosition - _parentIdentity.transform.position,
+        targetComponent.localRotation * Quaternion.Inverse(_parentIdentity.transform.rotation),
         GetScaleOffset(targetComponent.localScale, _parentIdentity.transform.localScale)
       );
     }
 
-    private void DeactivateParent(Vector3? scale) {
+    private void DeactivateParent() {
       Reset();
       _isParentActive = false;
-      if (_scaleOffset.HasValue) {
-        base.OnServerToClientSync(
-          targetComponent.localPosition,
-          targetComponent.localRotation,
-          _originalScale
-        );
-      }
+      base.OnServerToClientSync(
+        targetComponent.localPosition,
+        targetComponent.localRotation,
+        _originalScale
+      );
+    }
+
+    private void ChangeParent() {
+      _isParentChange = false;
+      Reset();
+      Debug.Log($"[{targetComponent.localPosition}] [{_newParentIdentity.transform.position}]/[{_parentIdentity.transform.position}] = [{_positionOffset}] || [{_newParentIdentity.netId}]/[{_parentIdentity.netId}]");
+      base.OnServerToClientSync(
+        targetComponent.localPosition - _newParentIdentity.transform.position,
+        targetComponent.localRotation * Quaternion.Inverse(_newParentIdentity.transform.rotation),
+        GetScaleOffset(targetComponent.localScale, _newParentIdentity.transform.localScale)
+      );
+      _parentIdentity = _newParentIdentity;
     }
 
     private void UpdateOffsetState() {
       if (_parentIdentity && isServer) {
         UpdateParentOffset();
-        RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset);
+        RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset, _parentIdentity ? _parentIdentity.netId : 0);
       }
     }
 
@@ -202,10 +215,12 @@ namespace NetworkScripts {
       UpdateOffsetState();
       if (!_parentIdentity) {
         if (!_isParentActive) base.OnServerToClientSync(position, rotation, scale);
-        else DeactivateParent(scale);
+        else DeactivateParent();
       }
       else {
-        if (_isParentActive) base.OnServerToClientSync(_positionOffset, _rotationOffset, _scaleOffset);
+        if (_isParentActive)
+          if (_isParentChange) ChangeParent();
+          else base.OnServerToClientSync(_positionOffset, _rotationOffset, _scaleOffset);
         else ActivateParent();
       }
     }

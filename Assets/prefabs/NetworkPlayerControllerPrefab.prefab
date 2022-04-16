@@ -83,7 +83,7 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0.02
   clientAuthority: 0
-  sendInterval: 0.02
+  sendInterval: 0.5
   syncPosition: 1
   syncRotation: 1
   syncScale: 1
@@ -103,6 +103,7 @@ MonoBehaviour:
   showOverlay: 0
   overlayColor: {r: 0, g: 0, b: 0, a: 0.5}
   syncVirtualParent: 1
+  _parentIdentity: {fileID: 0}
 --- !u!54 &3510978818144757826
 Rigidbody:
   m_ObjectHideFlags: 0
