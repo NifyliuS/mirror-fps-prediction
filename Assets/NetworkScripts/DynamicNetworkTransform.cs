@@ -92,6 +92,13 @@ namespace NetworkScripts {
       _parentIdentity = null;
     }
 
+    [ClientRpc(channel = Channels.Reliable)] //We want to make sure the NETID is sent since it is a one-off event
+    public void RpcDeactivateNetworkParent(uint parentNetId) {
+      if (_parentIdentity && _parentIdentity.netId == parentNetId) {
+        _parentIdentity = null;
+      }
+    }
+
     [ClientRpc(channel = Channels.Unreliable)]
     void RpcServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale, uint netId) {
       if (netId == 0 || _parentIdentity.netId != netId) return; //Disallow mixing offset positions from different parents - may happen due to using "Unreliable" channel
@@ -100,75 +107,8 @@ namespace NetworkScripts {
 
   #endregion
 
-  #region Server CMDs
 
-    [Command(channel = Channels.Reliable)]
-    public void CmdSetNetworkParent(NetworkIdentity identity) {
-      //TODO: add client side parent setting
-    }
-
-    [Command(channel = Channels.Reliable)]
-    public void CmdUnSetNetworkParent(NetworkIdentity identity) {
-      //TODO: add client side parent setting
-    }
-
-    [Command(channel = Channels.Unreliable)]
-    void CmdClientToServerParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
-      //TODO: Add client authority integration
-    }
-
-  #endregion
-
-  #region Server
-
-  #endregion
-
-
-  #region Client
-
-  #endregion
-
-  #region Server + Client
-
-    private Vector3 GetScaleOffset(Vector3 targetScale, Vector3 parentScale) {
-      return new Vector3(
-        targetScale.x / parentScale.x,
-        targetScale.y / parentScale.y,
-        targetScale.z / parentScale.z
-      );
-    }
-
-    public void UpdateParentOffset() {
-      if (_parentIdentity) {
-        SetParentOffset(
-          targetComponent.position - _parentIdentity.transform.position,
-          targetComponent.rotation * Quaternion.Inverse(_parentIdentity.transform.rotation),
-          GetScaleOffset(targetComponent.localScale, _parentIdentity.transform.localScale)
-        );
-      }
-    }
-
-    public void SetNetworkTransformParent(NetworkIdentity identity) {
-      if (_parentIdentity && _parentIdentity.netId == identity.netId) return;
-      _parentIdentity = identity;
-      UpdateParentOffset();
-      RpcUpdateNetworkParent(identity, _positionOffset, _rotationOffset, _scaleOffset);
-    }
-
-    public void UnSetNetworkTransformParent() {
-      if (!_parentIdentity) return;
-      _parentIdentity = null;
-      RpcClearNetworkParent();
-    }
-
-    private void SetParentOffset(Vector3? position, Quaternion? rotation, Vector3? scale) {
-      _positionOffset = position;
-      _rotationOffset = rotation;
-      _scaleOffset = scale;
-    }
-
-  #endregion
-
+  #region Parent Handling Functions
 
     private void ActivateParent() {
       Reset();
@@ -202,16 +142,92 @@ namespace NetworkScripts {
       _parentIdentity = _newParentIdentity;
     }
 
-    private void UpdateOffsetState() {
-      if (_parentIdentity && isServer) {
+  #endregion
+
+  #region Server CMDs
+
+    [Command(channel = Channels.Reliable)]
+    public void CmdSetNetworkParent(NetworkIdentity identity) {
+      //TODO: add client side parent setting
+    }
+
+    [Command(channel = Channels.Reliable)]
+    public void CmdUnSetNetworkParent(NetworkIdentity identity) {
+      //TODO: add client side parent setting
+    }
+
+    [Command(channel = Channels.Unreliable)]
+    void CmdClientToServerParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
+      //TODO: Add client authority integration
+    }
+
+  #endregion
+
+  #region Server
+
+    [Server]
+    private void UpdateServerOffsetState() {
+      if (_parentIdentity) {
         UpdateParentOffset();
         RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset, _parentIdentity ? _parentIdentity.netId : 0);
       }
     }
 
+  #endregion
+
+
+  #region Client
+
+  #endregion
+
+  #region Server + Client
+
+    public void UpdateParentOffset() {
+      if (_parentIdentity) {
+        SetParentOffset(
+          targetComponent.position - _parentIdentity.transform.position,
+          targetComponent.rotation * Quaternion.Inverse(_parentIdentity.transform.rotation),
+          GetScaleOffset(targetComponent.localScale, _parentIdentity.transform.localScale)
+        );
+      }
+    }
+
+    public void SetNetworkTransformParent(NetworkIdentity identity) {
+      if (_parentIdentity && _parentIdentity.netId == identity.netId) return;
+      _parentIdentity = identity;
+      UpdateParentOffset();
+      RpcUpdateNetworkParent(identity, _positionOffset, _rotationOffset, _scaleOffset);
+    }
+
+    public void UnSetNetworkTransformParent() {
+      if (_parentIdentity) {
+        _parentIdentity = null;
+        RpcClearNetworkParent();
+      }
+    }
+
+    public void DeactivateNetworkTransformParent(NetworkIdentity identity) {
+      if (_parentIdentity && _parentIdentity.netId == identity.netId) {
+        _parentIdentity = null;
+        RpcDeactivateNetworkParent(identity.netId);
+      }
+    }
+
+    private void SetParentOffset(Vector3? position, Quaternion? rotation, Vector3? scale) {
+      _positionOffset = position;
+      _rotationOffset = rotation;
+      _scaleOffset = scale;
+    }
+
+  #endregion
+
+
     /* Called by RpcServerToClientSync() */
     protected override void OnServerToClientSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
-      UpdateOffsetState();
+      if (isServer) {
+        UpdateServerOffsetState();
+      }
+
       if (!_parentIdentity) {
         if (!_isParentActive) base.OnServerToClientSync(position, rotation, scale);
         else DeactivateParent();
@@ -226,32 +242,6 @@ namespace NetworkScripts {
 
 
   #region Unity Callbacks
-
-    private (Vector3, Quaternion, Vector3) GetParentOffsetPosition() {
-      if (_parentIdentity) {
-        _parentPosition = _parentIdentity.transform.position;
-        _parentRotation = _parentIdentity.transform.rotation;
-        _parentScale = _parentIdentity.transform.localScale;
-      }
-
-      return (_parentPosition, _parentRotation, _parentScale);
-    }
-
-    protected override void ApplySnapshot(NTSnapshot start, NTSnapshot goal, NTSnapshot interpolated) {
-      if (_isParentActive) {
-        var (position, rotation, scale) = GetParentOffsetPosition();
-        interpolated.position = rotation * interpolated.position + position;
-        interpolated.rotation *= rotation;
-        interpolated.scale = Vector3.Scale(scale, interpolated.scale);
-
-        goal.position = rotation * (goal.position) + position;
-        goal.rotation *= rotation;
-        goal.scale = Vector3.Scale(scale, goal.scale);
-      }
-
-      base.ApplySnapshot(start, goal, interpolated);
-    }
-
 
     protected override void OnValidate() {
       base.OnValidate();
@@ -269,6 +259,44 @@ namespace NetworkScripts {
     /// </summary>
     protected override void OnDisable() {
       base.OnDisable();
+    }
+
+    protected override void ApplySnapshot(NTSnapshot start, NTSnapshot goal, NTSnapshot interpolated) {
+      if (_isParentActive) {
+        var (position, rotation, scale) = GetParentOffsetPosition();
+        interpolated.position = rotation * interpolated.position + position;
+        interpolated.rotation *= rotation;
+        interpolated.scale = Vector3.Scale(scale, interpolated.scale);
+
+        goal.position = rotation * (goal.position) + position;
+        goal.rotation *= rotation;
+        goal.scale = Vector3.Scale(scale, goal.scale);
+      }
+
+      base.ApplySnapshot(start, goal, interpolated);
+    }
+
+  #endregion
+
+  #region Helper Functions
+
+    private (Vector3, Quaternion, Vector3) GetParentOffsetPosition() {
+      if (_parentIdentity) {
+        var parentTransform = _parentIdentity.transform;
+        _parentPosition = parentTransform.position;
+        _parentRotation = parentTransform.rotation;
+        _parentScale = parentTransform.localScale;
+      }
+
+      return (_parentPosition, _parentRotation, _parentScale);
+    }
+
+    private Vector3 GetScaleOffset(Vector3 targetScale, Vector3 parentScale) {
+      return new Vector3(
+        targetScale.x / parentScale.x,
+        targetScale.y / parentScale.y,
+        targetScale.z / parentScale.z
+      );
     }
 
   #endregion
