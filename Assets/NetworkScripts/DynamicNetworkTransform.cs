@@ -79,19 +79,19 @@ namespace NetworkScripts {
 
   #region Client RPCs
 
-    [ClientRpc]
+    [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcUpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
       if (_parentIdentity && _parentIdentity.netId != identity.netId) ChangeParent(identity);
       else _parentIdentity = identity;
       SetParentOffset(position, rotation, scale);
     }
 
-    [ClientRpc]
+    [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcClearNetworkParent() {
       _parentIdentity = null;
     }
 
-    [ClientRpc]
+    [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcDeactivateNetworkParent(uint parentNetId) {
       if (_parentIdentity && _parentIdentity.netId == parentNetId) {
         _parentIdentity = null;
