@@ -11,6 +11,12 @@ using UnityEngine.Animations;
     API Reference: https://mirror-networking.com/docs/api/Mirror.NetworkTransformBase.html
 */
 namespace NetworkScripts {
+  public struct NtPositionPack {
+    public Vector3?    Position;
+    public Quaternion? Rotation;
+    public Vector3?    Scale;
+  }
+
   public class DynamicNetworkTransform : NetworkTransformBase {
     protected override Transform       targetComponent        => transform;
     public             NetworkIdentity ParentNetworkIdentity  => _parentIdentity;
@@ -26,9 +32,9 @@ namespace NetworkScripts {
     private Vector3         _originalScale;
     private bool            _isParentChange = false;
 
-    [SerializeField] private Nullable<Vector3>    _positionOffset = null;
-    [SerializeField] private Nullable<Quaternion> _rotationOffset = null;
-    [SerializeField] private Nullable<Vector3>    _scaleOffset    = null;
+    private Nullable<Vector3>    _positionOffset = null;
+    private Nullable<Quaternion> _rotationOffset = null;
+    private Nullable<Vector3>    _scaleOffset    = null;
 
     private Vector3    _oldParentPosition;
     private Quaternion _oldParentRotation;
@@ -95,8 +101,8 @@ namespace NetworkScripts {
     }
 
     [ClientRpc(channel = Channels.Unreliable)]
-    void RpcServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale, uint netId) {
-      if (netId == 0 || _parentIdentity.netId != netId) return; //Disallow mixing offset positions from different parents - may happen due to using "Unreliable" channel
+    void RpcServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale, uint parentNetId) {
+      if (parentNetId == 0 || _parentIdentity.netId != parentNetId) return; //Disallow mixing offset positions from different parents - may happen due to using "Unreliable" channel
       SetParentOffset(position, rotation, scale);
     }
 
@@ -106,37 +112,53 @@ namespace NetworkScripts {
   #region Parent Handling Functions
 
     private void ActivateParent() {
-      Reset();
       _isParentActive = true;
       _originalScale = targetComponent.localScale;
       var identityTransform = _parentIdentity.transform;
-      base.OnServerToClientSync(
-        targetComponent.localPosition - identityTransform.position,
-        targetComponent.localRotation * Quaternion.Inverse(identityTransform.rotation),
-        GetScaleOffset(targetComponent.localScale, identityTransform.localScale)
+      AdjustTransformPosition(
+        new NtPositionPack() {
+          Position = targetComponent.localPosition - identityTransform.position,
+          Rotation = targetComponent.localRotation * Quaternion.Inverse(identityTransform.rotation),
+          Scale = GetScaleOffset(targetComponent.localScale, identityTransform.localScale)
+        },
+        new NtPositionPack()
       );
     }
 
     private void DeactivateParent() {
-      Reset();
       _isParentActive = false;
-      base.OnServerToClientSync(
-        targetComponent.localPosition,
-        targetComponent.localRotation,
-        _originalScale
+      AdjustTransformPosition(
+        new NtPositionPack() {
+          Position = targetComponent.localPosition,
+          Rotation = targetComponent.localRotation,
+          Scale = _originalScale
+        },
+        new NtPositionPack()
       );
     }
 
     private void ChangeParent(NetworkIdentity newIdentity) {
       _isParentChange = false;
-      Reset();
       var newTransform = newIdentity.transform;
-      base.OnServerToClientSync(
-        targetComponent.localPosition - newTransform.position,
-        targetComponent.localRotation * Quaternion.Inverse(newTransform.rotation),
-        GetScaleOffset(targetComponent.localScale, newTransform.localScale)
+      AdjustTransformPosition(
+        new NtPositionPack() {
+          Position = targetComponent.localPosition - newTransform.position,
+          Rotation = targetComponent.localRotation * Quaternion.Inverse(newTransform.rotation),
+          Scale = GetScaleOffset(targetComponent.localScale, newTransform.localScale)
+        },
+        new NtPositionPack()
       );
       _parentIdentity = newIdentity;
+    }
+
+    private void AdjustTransformPosition(NtPositionPack startPack, NtPositionPack goalPack) {
+      Reset();
+      base.OnServerToClientSync(
+        startPack.Position,
+        startPack.Rotation,
+        startPack.Scale
+      );
+      // TODO: Add both start and goal buffer positions rewrite
     }
 
   #endregion
@@ -166,7 +188,7 @@ namespace NetworkScripts {
     private void UpdateServerOffsetState() {
       if (_parentIdentity) {
         UpdateParentOffset();
-        RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset, _parentIdentity ? _parentIdentity.netId : 0);
+        RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset, _parentIdentity.netId > 0 ? _parentIdentity.netId : 0);
       }
     }
 
@@ -226,7 +248,6 @@ namespace NetworkScripts {
       }
 
       if (!_parentIdentity) {
-        base.OnServerToClientSync(position, rotation, scale);
         if (!_isParentActive) base.OnServerToClientSync(position, rotation, scale);
         else DeactivateParent();
       }
