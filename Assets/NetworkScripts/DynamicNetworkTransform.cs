@@ -30,7 +30,6 @@ namespace NetworkScripts {
     private Quaternion      _parentRotation;
     private Vector3         _parentScale;
     private Vector3         _originalScale;
-    private bool            _isParentChange = false;
 
     private Nullable<Vector3>    _positionOffset = null;
     private Nullable<Quaternion> _rotationOffset = null;
@@ -82,10 +81,9 @@ namespace NetworkScripts {
 
     [ClientRpc(channel = Channels.Reliable)] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcUpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
-      SetParentOffset(position, rotation, scale);
-      _isParentChange = _parentIdentity && _parentIdentity.netId != identity.netId;
-      if (_isParentChange) ChangeParent(identity);
+      if (_parentIdentity && _parentIdentity.netId != identity.netId) ChangeParent(identity);
       else _parentIdentity = identity;
+      SetParentOffset(position, rotation, scale);
     }
 
     [ClientRpc(channel = Channels.Reliable)] //We want to make sure the NETID is sent since it is a one-off event
@@ -102,7 +100,7 @@ namespace NetworkScripts {
 
     [ClientRpc(channel = Channels.Unreliable)]
     void RpcServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale, uint parentNetId) {
-      if (parentNetId == 0 || _parentIdentity.netId != parentNetId) return; //Disallow mixing offset positions from different parents - may happen due to using "Unreliable" channel
+      if (parentNetId == 0 || !_parentIdentity || _parentIdentity.netId != parentNetId) return; //Disallow mixing offset positions from different parents - may happen due to using "Unreliable" channel
       SetParentOffset(position, rotation, scale);
     }
 
@@ -138,7 +136,6 @@ namespace NetworkScripts {
     }
 
     private void ChangeParent(NetworkIdentity newIdentity) {
-      _isParentChange = false;
       var newTransform = newIdentity.transform;
       AdjustTransformPosition(
         new NtPositionPack() {
