@@ -81,21 +81,25 @@ namespace NetworkScripts {
     
     [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcUpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
+      if (isServer || IsClientWithAuthority) return;
       UpdateNetworkParent(identity, position, rotation, scale);
     }
 
     [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcClearNetworkParent() {
+      if (isServer || IsClientWithAuthority) return;
       ClearNetworkParent();
     }
 
     [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcDeactivateNetworkParent(uint parentNetId) {
+      if (isServer || IsClientWithAuthority) return;
       DeactivateNetworkParent(parentNetId);
     }
 
     [ClientRpc(channel = Channels.Unreliable)]
     void RpcServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale, uint parentNetId) {
+      if (isServer || IsClientWithAuthority) return;
       if (parentNetId == 0 || !_parentIdentity || _parentIdentity.netId != parentNetId) return; //Disallow mixing offset positions from different parents - may happen due to using "Unreliable" channel
       SetParentOffset(position, rotation, scale);
     }
@@ -107,22 +111,27 @@ namespace NetworkScripts {
     [Command] //We want to make sure the NETID is sent since it is a one-off event
     public void CmdUpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
       UpdateNetworkParent(identity, position, rotation, scale);
+      if (clientAuthority) RpcUpdateNetworkParent(identity, position, rotation, scale);
     }
+    
 
     [Command] //We want to make sure the NETID is sent since it is a one-off event
     public void CmdClearNetworkParent() {
       ClearNetworkParent();
+      if (clientAuthority) RpcClearNetworkParent();
     }
 
     [Command] //We want to make sure the NETID is sent since it is a one-off event
     public void CmdDeactivateNetworkParent(uint parentNetId) {
       DeactivateNetworkParent(parentNetId);
+      if (clientAuthority) RpcDeactivateNetworkParent(parentNetId);
     }
 
     [Command(channel = Channels.Unreliable)]
     void CmdServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale, uint parentNetId) {
       if (parentNetId == 0 || !_parentIdentity || _parentIdentity.netId != parentNetId) return; //Disallow mixing offset positions from different parents - may happen due to using "Unreliable" channel
       SetParentOffset(position, rotation, scale);
+      if (clientAuthority) RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset, _parentIdentity.netId > 0 ? _parentIdentity.netId : 0);
     }
 
   #endregion
@@ -215,6 +224,9 @@ namespace NetworkScripts {
   #region Server
 
     private void UpdateServerOffsetState() {
+      if (isServer || IsClientWithAuthority) {
+        AdjustTargetPositionRelativeToParent();   //Make sure we adjust the position relative to parent before we calculate offset
+      }
       if (_parentIdentity) {
         if (IsClientWithAuthority) {
           UpdateParentOffset();
