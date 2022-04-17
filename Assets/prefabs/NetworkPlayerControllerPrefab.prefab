@@ -82,7 +82,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   syncMode: 0
   syncInterval: 0.02
-  clientAuthority: 1
+  clientAuthority: 0
   sendInterval: 0.2
   syncPosition: 1
   syncRotation: 1
