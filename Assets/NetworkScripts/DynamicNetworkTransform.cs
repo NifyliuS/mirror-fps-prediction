@@ -78,7 +78,7 @@ namespace NetworkScripts {
   #endregion
 
   #region Client RPCs
-
+    
     [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcUpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
       UpdateNetworkParent(identity, position, rotation, scale);
@@ -216,7 +216,7 @@ namespace NetworkScripts {
 
     private void UpdateServerOffsetState() {
       if (_parentIdentity) {
-        if (isClient) {
+        if (IsClientWithAuthority) {
           UpdateParentOffset();
         }
 
@@ -249,7 +249,6 @@ namespace NetworkScripts {
     }
 
     public void SetNetworkTransformParent(NetworkIdentity identity) {
-      if (!hasAuthority) return;
       if (_parentIdentity && _parentIdentity.netId == identity.netId) return;
       _parentIdentity = identity;
       KeepParentPosition();
@@ -263,7 +262,6 @@ namespace NetworkScripts {
     }
 
     public void UnSetNetworkTransformParent() {
-      if (!hasAuthority) return;
       if (_parentIdentity) {
         _parentIdentity = null;
         if (isServer) {
@@ -276,7 +274,6 @@ namespace NetworkScripts {
     }
 
     public void DeactivateNetworkTransformParent(NetworkIdentity identity) {
-      if (!hasAuthority) return;
       if (_parentIdentity && _parentIdentity.netId == identity.netId) {
         _parentIdentity = null;
         if (isServer) {
@@ -306,13 +303,13 @@ namespace NetworkScripts {
     }
 
     private void FixedUpdate() {
-      if (isServer) {
+      if (isServer || IsClientWithAuthority) {
         AdjustTargetPositionRelativeToParent();
       }
     }
 
     private void LateUpdate() {
-      if (isServer) {
+      if (isServer || IsClientWithAuthority) {
         AdjustTargetPositionRelativeToParent();
       }
     }
@@ -322,19 +319,21 @@ namespace NetworkScripts {
       if (isServer || IsClientWithAuthority) {
         UpdateServerOffsetState();
       }
+
+      if (!_parentIdentity) {
+        if (!_isParentActive) base.OnServerToClientSync(position, rotation, scale);
+        else DeactivateParent();
+      }
       else {
-        if (!_parentIdentity) {
-          if (!_isParentActive) base.OnServerToClientSync(position, rotation, scale);
-          else DeactivateParent();
-        }
-        else {
-          if (_isParentActive) base.OnServerToClientSync(_positionOffset, _rotationOffset, _scaleOffset);
-          else ActivateParent();
-        }
+        if (_isParentActive) base.OnServerToClientSync(_positionOffset, _rotationOffset, _scaleOffset);
+        else ActivateParent();
       }
     }
 
     protected override void OnClientToServerSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
+      if (IsClientWithAuthority) {
+        UpdateServerOffsetState();
+      }
       if (!_parentIdentity) {
         if (!_isParentActive) base.OnClientToServerSync(position, rotation, scale);
         else DeactivateParent();
