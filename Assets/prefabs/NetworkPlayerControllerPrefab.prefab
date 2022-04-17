@@ -82,7 +82,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   syncMode: 0
   syncInterval: 0.02
-  clientAuthority: 0
+  clientAuthority: 1
   sendInterval: 0.2
   syncPosition: 1
   syncRotation: 1
@@ -104,6 +104,7 @@ MonoBehaviour:
   overlayColor: {r: 0, g: 0, b: 0, a: 0.5}
   syncVirtualParent: 1
   _parentIdentity: {fileID: 0}
+  _isParentActive: 0
 --- !u!54 &3510978818144757826
 Rigidbody:
   m_ObjectHideFlags: 0

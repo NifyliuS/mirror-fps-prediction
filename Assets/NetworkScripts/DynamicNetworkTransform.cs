@@ -192,11 +192,21 @@ namespace NetworkScripts {
 
     private void AdjustTransformPosition(NtPositionPack startPack, NtPositionPack goalPack) {
       Reset();
-      base.OnServerToClientSync(
-        startPack.Position,
-        startPack.Rotation,
-        startPack.Scale
-      );
+      if (isServer) {
+        base.OnClientToServerSync(
+          startPack.Position,
+          startPack.Rotation,
+          startPack.Scale
+        );
+      }
+      else {
+        base.OnServerToClientSync(
+          startPack.Position,
+          startPack.Rotation,
+          startPack.Scale
+        );
+      }
+
       // TODO: Add both start and goal buffer positions rewrite
     }
 
@@ -206,8 +216,16 @@ namespace NetworkScripts {
 
     private void UpdateServerOffsetState() {
       if (_parentIdentity) {
-        UpdateParentOffset();
-        RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset, _parentIdentity.netId > 0 ? _parentIdentity.netId : 0);
+        if (isClient) {
+          UpdateParentOffset();
+        }
+
+        if (isServer) {
+          RpcServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset, _parentIdentity.netId > 0 ? _parentIdentity.netId : 0);
+        }
+        else {
+          CmdServerToClientParentOffsetSync(_positionOffset, _rotationOffset, _scaleOffset, _parentIdentity.netId > 0 ? _parentIdentity.netId : 0);
+        }
       }
     }
 
@@ -278,7 +296,7 @@ namespace NetworkScripts {
 
   #endregion
 
-    private void AdjustTargetPositonRelativeToParent() {
+    private void AdjustTargetPositionRelativeToParent() {
       if (_parentIdentity && _parentIdentity.transform.hasChanged) {
         var (changePosition, changeRotation, changeScale) = GetParentPositionChange();
         targetComponent.localPosition += changePosition;
@@ -289,19 +307,19 @@ namespace NetworkScripts {
 
     private void FixedUpdate() {
       if (isServer) {
-        AdjustTargetPositonRelativeToParent();
+        AdjustTargetPositionRelativeToParent();
       }
     }
 
     private void LateUpdate() {
       if (isServer) {
-        AdjustTargetPositonRelativeToParent();
+        AdjustTargetPositionRelativeToParent();
       }
     }
 
     /* Called by RpcServerToClientSync() */
     protected override void OnServerToClientSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
-      if (isServer) {
+      if (isServer || IsClientWithAuthority) {
         UpdateServerOffsetState();
       }
       else {
@@ -316,19 +334,16 @@ namespace NetworkScripts {
       }
     }
 
-    // protected override void OnClientToServerSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
-    //  
-    //   UpdateServerOffsetState();
-    //
-    //   if (!_parentIdentity) {
-    //     if (!_isParentActive) base.OnClientToServerSync(position, rotation, scale);
-    //     else DeactivateParent();
-    //   }
-    //   else {
-    //     if (_isParentActive) base.OnClientToServerSync(_positionOffset, _rotationOffset, _scaleOffset);
-    //     else ActivateParent();
-    //   }
-    // }
+    protected override void OnClientToServerSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
+      if (!_parentIdentity) {
+        if (!_isParentActive) base.OnClientToServerSync(position, rotation, scale);
+        else DeactivateParent();
+      }
+      else {
+        if (_isParentActive) base.OnClientToServerSync(_positionOffset, _rotationOffset, _scaleOffset);
+        else ActivateParent();
+      }
+    }
 
   #region Unity Callbacks
 
