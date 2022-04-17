@@ -17,7 +17,9 @@ namespace PlayerScripts {
     private GameObject _LocalPlayer;
     private GameObject _RemotePlayer;
 
-    private List<NetworkIdentity> _parents =  new List<NetworkIdentity>();
+    private List<NetworkIdentity> _parents = new List<NetworkIdentity>();
+    private NetworkIdentity       _activeParent;
+
   #endregion
 
   #region Public variables
@@ -78,29 +80,41 @@ namespace PlayerScripts {
         transform.position = new Vector3(transform.position.x - 0.05f, transform.position.y, transform.position.z);
       }
     }
-    
+
     private void OnTriggerEnter(Collider collider) {
       NetworkCollider networkCollider = collider.GetComponentInParent<NetworkCollider>();
       if (networkCollider && hasAuthority) {
         Debug.Log("Set Network Parent Identity");
         _parents.Add(networkCollider.netIdentity);
+        _activeParent = networkCollider.netIdentity;
         DynamicNT.SetNetworkTransformParent(networkCollider.netIdentity);
       }
     }
 
- 
+
     private void OnTriggerExit(Collider collider) {
       NetworkCollider networkCollider = collider.GetComponentInParent<NetworkCollider>();
       if (networkCollider && hasAuthority) {
         Debug.Log("Clear/Change Network Parent Identity");
-        if (_parents.Count > 0) {
-          _parents.RemoveAt(_parents.Count -1 );
-        }
-        if (_parents.Count > 0) {
-          DynamicNT.SetNetworkTransformParent(_parents[_parents.Count-1]); 
+        if (networkCollider.netIdentity.netId == _activeParent.netId) {
+          _parents.RemoveAt(_parents.Count - 1);
         }
         else {
+          List<NetworkIdentity> filteredParents = new List<NetworkIdentity>();
+          foreach (NetworkIdentity NID in _parents) {
+            if (NID.netId != networkCollider.netIdentity.netId) {
+              filteredParents.Add(NID);
+            }
+          }
+
+          _parents = filteredParents;
+        }
+
+        if (_parents.Count == 0) {
           DynamicNT.UnSetNetworkTransformParent();
+        }
+        else {
+          DynamicNT.SetNetworkTransformParent(_parents[_parents.Count - 1]);
         }
       }
     }

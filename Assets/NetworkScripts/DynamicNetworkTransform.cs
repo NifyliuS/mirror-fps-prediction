@@ -25,7 +25,7 @@ namespace NetworkScripts {
     public bool syncVirtualParent = true;
 
     public  NetworkIdentity _parentIdentity;
-    private bool            _isParentActive = false;
+    public  bool            _isParentActive = false;
     private Vector3         _parentPosition;
     private Quaternion      _parentRotation;
     private Vector3         _parentScale;
@@ -142,7 +142,11 @@ namespace NetworkScripts {
 
     private void UpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
       if (_parentIdentity && _parentIdentity.netId != identity.netId) ChangeParent(identity);
-      else _parentIdentity = identity;
+      else {
+        _parentIdentity = identity;
+        KeepParentPosition();
+      }
+
       SetParentOffset(position, rotation, scale);
     }
 
@@ -183,6 +187,7 @@ namespace NetworkScripts {
         new NtPositionPack()
       );
       _parentIdentity = newIdentity;
+      KeepParentPosition();
     }
 
     private void AdjustTransformPosition(NtPositionPack startPack, NtPositionPack goalPack) {
@@ -199,7 +204,6 @@ namespace NetworkScripts {
 
   #region Server
 
-   
     private void UpdateServerOffsetState() {
       if (_parentIdentity) {
         UpdateParentOffset();
@@ -230,6 +234,7 @@ namespace NetworkScripts {
       if (!hasAuthority) return;
       if (_parentIdentity && _parentIdentity.netId == identity.netId) return;
       _parentIdentity = identity;
+      KeepParentPosition();
       UpdateParentOffset();
       if (isServer) {
         RpcUpdateNetworkParent(identity, _positionOffset, _rotationOffset, _scaleOffset);
@@ -273,37 +278,58 @@ namespace NetworkScripts {
 
   #endregion
 
+    private void AdjustTargetPositonRelativeToParent() {
+      if (_parentIdentity && _parentIdentity.transform.hasChanged) {
+        var (changePosition, changeRotation, changeScale) = GetParentPositionChange();
+        targetComponent.localPosition += changePosition;
+        KeepParentPosition();
+        _parentIdentity.transform.hasChanged = false;
+      }
+    }
+
+    private void FixedUpdate() {
+      if (isServer) {
+        AdjustTargetPositonRelativeToParent();
+      }
+    }
+
+    private void LateUpdate() {
+      if (isServer) {
+        AdjustTargetPositonRelativeToParent();
+      }
+    }
 
     /* Called by RpcServerToClientSync() */
     protected override void OnServerToClientSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
       if (isServer) {
         UpdateServerOffsetState();
       }
-
-      if (!_parentIdentity) {
-        if (!_isParentActive) base.OnServerToClientSync(position, rotation, scale);
-        else DeactivateParent();
-      }
       else {
-        if (_isParentActive) base.OnServerToClientSync(_positionOffset, _rotationOffset, _scaleOffset);
-        else ActivateParent();
+        if (!_parentIdentity) {
+          if (!_isParentActive) base.OnServerToClientSync(position, rotation, scale);
+          else DeactivateParent();
+        }
+        else {
+          if (_isParentActive) base.OnServerToClientSync(_positionOffset, _rotationOffset, _scaleOffset);
+          else ActivateParent();
+        }
       }
     }
 
-    protected override void OnClientToServerSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
-     
-      UpdateServerOffsetState();
+    // protected override void OnClientToServerSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
+    //  
+    //   UpdateServerOffsetState();
+    //
+    //   if (!_parentIdentity) {
+    //     if (!_isParentActive) base.OnClientToServerSync(position, rotation, scale);
+    //     else DeactivateParent();
+    //   }
+    //   else {
+    //     if (_isParentActive) base.OnClientToServerSync(_positionOffset, _rotationOffset, _scaleOffset);
+    //     else ActivateParent();
+    //   }
+    // }
 
-      if (!_parentIdentity) {
-        if (!_isParentActive) base.OnClientToServerSync(position, rotation, scale);
-        else DeactivateParent();
-      }
-      else {
-        if (_isParentActive) base.OnClientToServerSync(_positionOffset, _rotationOffset, _scaleOffset);
-        else ActivateParent();
-      }
-    }
-    
   #region Unity Callbacks
 
     protected override void OnValidate() {
@@ -352,6 +378,25 @@ namespace NetworkScripts {
       }
 
       return (_parentPosition, _parentRotation, _parentScale);
+    }
+
+
+    private void KeepParentPosition() {
+      if (_parentIdentity) {
+        var parentTransform = _parentIdentity.transform;
+        _oldParentPosition = parentTransform.position;
+        _oldParentRotation = parentTransform.rotation;
+        _oldParentScale = parentTransform.localScale;
+      }
+    }
+
+    private (Vector3, Quaternion, Vector3) GetParentPositionChange() {
+      var parentTransform = _parentIdentity.transform;
+      return (
+        parentTransform.localPosition - _oldParentPosition,
+        parentTransform.localRotation * Quaternion.Inverse(_oldParentRotation),
+        GetScaleOffset(parentTransform.localScale, _oldParentScale)
+      );
     }
 
     private Vector3 GetScaleOffset(Vector3 targetScale, Vector3 parentScale) {
