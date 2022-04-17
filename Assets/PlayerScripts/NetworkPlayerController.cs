@@ -17,6 +17,7 @@ namespace PlayerScripts {
     private GameObject _LocalPlayer;
     private GameObject _RemotePlayer;
 
+    private List<NetworkIdentity> _parents =  new List<NetworkIdentity>();
   #endregion
 
   #region Public variables
@@ -52,6 +53,7 @@ namespace PlayerScripts {
 
 
     private void FixedUpdate() {
+      if (!hasAuthority) return;
       if (Input.GetKey(KeyCode.Q)) {
         transform.rotation *= Quaternion.Euler(0.5f, 0, 0);
       }
@@ -76,24 +78,30 @@ namespace PlayerScripts {
         transform.position = new Vector3(transform.position.x - 0.05f, transform.position.y, transform.position.z);
       }
     }
-
-
-    [Server]
+    
     private void OnTriggerEnter(Collider collider) {
-      Debug.Log("OnTriggerEnterOnTriggerEnterOnTriggerEnterOnTriggerEnterOnTriggerEnterOnTriggerEnterOnTriggerEnter");
       NetworkCollider networkCollider = collider.GetComponentInParent<NetworkCollider>();
-      if (networkCollider) {
-        Debug.Log("SetNetworkTransformParent");
+      if (networkCollider && hasAuthority) {
+        Debug.Log("Set Network Parent Identity");
+        _parents.Add(networkCollider.netIdentity);
         DynamicNT.SetNetworkTransformParent(networkCollider.netIdentity);
       }
     }
 
-    [Server]
+ 
     private void OnTriggerExit(Collider collider) {
-      Debug.Log("OnTriggerExitOnTriggerExitOnTriggerExitOnTriggerExitOnTriggerExitOnTriggerExitOnTriggerExit");
       NetworkCollider networkCollider = collider.GetComponentInParent<NetworkCollider>();
-      if (networkCollider) {
-        DynamicNT.UnSetNetworkTransformParent();
+      if (networkCollider && hasAuthority) {
+        Debug.Log("Clear/Change Network Parent Identity");
+        if (_parents.Count > 0) {
+          _parents.RemoveAt(_parents.Count -1 );
+        }
+        if (_parents.Count > 0) {
+          DynamicNT.SetNetworkTransformParent(_parents[_parents.Count-1]); 
+        }
+        else {
+          DynamicNT.UnSetNetworkTransformParent();
+        }
       }
     }
   }
