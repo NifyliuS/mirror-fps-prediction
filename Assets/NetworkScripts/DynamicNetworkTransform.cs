@@ -81,21 +81,17 @@ namespace NetworkScripts {
 
     [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcUpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
-      if (_parentIdentity && _parentIdentity.netId != identity.netId) ChangeParent(identity);
-      else _parentIdentity = identity;
-      SetParentOffset(position, rotation, scale);
+      UpdateNetworkParent(identity, position, rotation, scale);
     }
 
     [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcClearNetworkParent() {
-      _parentIdentity = null;
+      ClearNetworkParent();
     }
 
     [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcDeactivateNetworkParent(uint parentNetId) {
-      if (_parentIdentity && _parentIdentity.netId == parentNetId) {
-        _parentIdentity = null;
-      }
+      DeactivateNetworkParent(parentNetId);
     }
 
     [ClientRpc(channel = Channels.Unreliable)]
@@ -106,8 +102,49 @@ namespace NetworkScripts {
 
   #endregion
 
+  #region Server CMDs
+
+    [Command] //We want to make sure the NETID is sent since it is a one-off event
+    public void CmdUpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
+      UpdateNetworkParent(identity, position, rotation, scale);
+    }
+
+    [Command] //We want to make sure the NETID is sent since it is a one-off event
+    public void CmdClearNetworkParent() {
+      ClearNetworkParent();
+    }
+
+    [Command] //We want to make sure the NETID is sent since it is a one-off event
+    public void CmdDeactivateNetworkParent(uint parentNetId) {
+      DeactivateNetworkParent(parentNetId);
+    }
+
+    [Command(channel = Channels.Unreliable)]
+    void CmdServerToClientParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale, uint parentNetId) {
+      if (parentNetId == 0 || !_parentIdentity || _parentIdentity.netId != parentNetId) return; //Disallow mixing offset positions from different parents - may happen due to using "Unreliable" channel
+      SetParentOffset(position, rotation, scale);
+    }
+
+  #endregion
+
 
   #region Parent Handling Functions
+
+    private void ClearNetworkParent() {
+      _parentIdentity = null;
+    }
+
+    private void DeactivateNetworkParent(uint parentNetId) {
+      if (_parentIdentity && _parentIdentity.netId == parentNetId) {
+        _parentIdentity = null;
+      }
+    }
+
+    private void UpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
+      if (_parentIdentity && _parentIdentity.netId != identity.netId) ChangeParent(identity);
+      else _parentIdentity = identity;
+      SetParentOffset(position, rotation, scale);
+    }
 
     private void ActivateParent() {
       _isParentActive = true;
@@ -160,28 +197,9 @@ namespace NetworkScripts {
 
   #endregion
 
-  #region Server CMDs
-
-    [Command(channel = Channels.Reliable)]
-    public void CmdSetNetworkParent(NetworkIdentity identity) {
-      //TODO: add client side parent setting
-    }
-
-    [Command(channel = Channels.Reliable)]
-    public void CmdUnSetNetworkParent(NetworkIdentity identity) {
-      //TODO: add client side parent setting
-    }
-
-    [Command(channel = Channels.Unreliable)]
-    void CmdClientToServerParentOffsetSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
-      //TODO: Add client authority integration
-    }
-
-  #endregion
-
   #region Server
 
-    [Server]
+   
     private void UpdateServerOffsetState() {
       if (_parentIdentity) {
         UpdateParentOffset();
@@ -198,7 +216,7 @@ namespace NetworkScripts {
 
   #region Server + Client
 
-    public void UpdateParentOffset() {
+    private void UpdateParentOffset() {
       if (_parentIdentity) {
         SetParentOffset(
           targetComponent.position - _parentIdentity.transform.position,
@@ -209,23 +227,41 @@ namespace NetworkScripts {
     }
 
     public void SetNetworkTransformParent(NetworkIdentity identity) {
+      if (!hasAuthority) return;
       if (_parentIdentity && _parentIdentity.netId == identity.netId) return;
       _parentIdentity = identity;
       UpdateParentOffset();
-      RpcUpdateNetworkParent(identity, _positionOffset, _rotationOffset, _scaleOffset);
+      if (isServer) {
+        RpcUpdateNetworkParent(identity, _positionOffset, _rotationOffset, _scaleOffset);
+      }
+      else {
+        CmdUpdateNetworkParent(identity, _positionOffset, _rotationOffset, _scaleOffset);
+      }
     }
 
     public void UnSetNetworkTransformParent() {
+      if (!hasAuthority) return;
       if (_parentIdentity) {
         _parentIdentity = null;
-        RpcClearNetworkParent();
+        if (isServer) {
+          RpcClearNetworkParent();
+        }
+        else {
+          CmdClearNetworkParent();
+        }
       }
     }
 
     public void DeactivateNetworkTransformParent(NetworkIdentity identity) {
+      if (!hasAuthority) return;
       if (_parentIdentity && _parentIdentity.netId == identity.netId) {
         _parentIdentity = null;
-        RpcDeactivateNetworkParent(identity.netId);
+        if (isServer) {
+          RpcDeactivateNetworkParent(identity.netId);
+        }
+        else {
+          CmdDeactivateNetworkParent(identity.netId);
+        }
       }
     }
 
@@ -254,7 +290,20 @@ namespace NetworkScripts {
       }
     }
 
+    protected override void OnClientToServerSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
+     
+      UpdateServerOffsetState();
 
+      if (!_parentIdentity) {
+        if (!_isParentActive) base.OnClientToServerSync(position, rotation, scale);
+        else DeactivateParent();
+      }
+      else {
+        if (_isParentActive) base.OnClientToServerSync(_positionOffset, _rotationOffset, _scaleOffset);
+        else ActivateParent();
+      }
+    }
+    
   #region Unity Callbacks
 
     protected override void OnValidate() {
