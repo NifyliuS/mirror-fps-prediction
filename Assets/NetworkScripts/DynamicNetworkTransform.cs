@@ -78,7 +78,7 @@ namespace NetworkScripts {
   #endregion
 
   #region Client RPCs
-    
+
     [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
     public void RpcUpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
       if (isServer || IsClientWithAuthority) return;
@@ -89,12 +89,6 @@ namespace NetworkScripts {
     public void RpcClearNetworkParent() {
       if (isServer || IsClientWithAuthority) return;
       ClearNetworkParent();
-    }
-
-    [ClientRpc] //We want to make sure the NETID is sent since it is a one-off event
-    public void RpcDeactivateNetworkParent(uint parentNetId) {
-      if (isServer || IsClientWithAuthority) return;
-      DeactivateNetworkParent(parentNetId);
     }
 
     [ClientRpc(channel = Channels.Unreliable)]
@@ -113,18 +107,12 @@ namespace NetworkScripts {
       UpdateNetworkParent(identity, position, rotation, scale);
       if (clientAuthority) RpcUpdateNetworkParent(identity, position, rotation, scale);
     }
-    
+
 
     [Command] //We want to make sure the NETID is sent since it is a one-off event
     public void CmdClearNetworkParent() {
       ClearNetworkParent();
       if (clientAuthority) RpcClearNetworkParent();
-    }
-
-    [Command] //We want to make sure the NETID is sent since it is a one-off event
-    public void CmdDeactivateNetworkParent(uint parentNetId) {
-      DeactivateNetworkParent(parentNetId);
-      if (clientAuthority) RpcDeactivateNetworkParent(parentNetId);
     }
 
     [Command(channel = Channels.Unreliable)]
@@ -141,12 +129,6 @@ namespace NetworkScripts {
 
     private void ClearNetworkParent() {
       _parentIdentity = null;
-    }
-
-    private void DeactivateNetworkParent(uint parentNetId) {
-      if (_parentIdentity && _parentIdentity.netId == parentNetId) {
-        _parentIdentity = null;
-      }
     }
 
     private void UpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
@@ -225,8 +207,9 @@ namespace NetworkScripts {
 
     private void UpdateServerOffsetState() {
       if (isServer || IsClientWithAuthority) {
-        AdjustTargetPositionRelativeToParent();   //Make sure we adjust the position relative to parent before we calculate offset
+        AdjustTargetPositionRelativeToParent(); //Make sure we adjust the position relative to parent before we calculate offset
       }
+
       if (_parentIdentity) {
         if (IsClientWithAuthority) {
           UpdateParentOffset();
@@ -285,18 +268,6 @@ namespace NetworkScripts {
       }
     }
 
-    public void DeactivateNetworkTransformParent(NetworkIdentity identity) {
-      if (_parentIdentity && _parentIdentity.netId == identity.netId) {
-        _parentIdentity = null;
-        if (isServer) {
-          RpcDeactivateNetworkParent(identity.netId);
-        }
-        else {
-          CmdDeactivateNetworkParent(identity.netId);
-        }
-      }
-    }
-
     private void SetParentOffset(Vector3? position, Quaternion? rotation, Vector3? scale) {
       _positionOffset = position;
       _rotationOffset = rotation;
@@ -304,27 +275,6 @@ namespace NetworkScripts {
     }
 
   #endregion
-
-    private void AdjustTargetPositionRelativeToParent() {
-      if (_parentIdentity && _parentIdentity.transform.hasChanged) {
-        var (changePosition, changeRotation, changeScale) = GetParentPositionChange();
-        targetComponent.localPosition += changePosition;
-        KeepParentPosition();
-        _parentIdentity.transform.hasChanged = false;
-      }
-    }
-
-    private void FixedUpdate() {
-      if (isServer || IsClientWithAuthority) {
-        AdjustTargetPositionRelativeToParent();
-      }
-    }
-
-    private void LateUpdate() {
-      if (isServer || IsClientWithAuthority) {
-        AdjustTargetPositionRelativeToParent();
-      }
-    }
 
     /* Called by RpcServerToClientSync() */
     protected override void OnServerToClientSync(Vector3? position, Quaternion? rotation, Vector3? scale) {
@@ -346,6 +296,7 @@ namespace NetworkScripts {
       if (IsClientWithAuthority) {
         UpdateServerOffsetState();
       }
+
       if (!_parentIdentity) {
         if (!_isParentActive) base.OnClientToServerSync(position, rotation, scale);
         else DeactivateParent();
@@ -394,6 +345,27 @@ namespace NetworkScripts {
   #endregion
 
   #region Helper Functions
+
+    private void AdjustTargetPositionRelativeToParent() {
+      if (_parentIdentity && _parentIdentity.transform.hasChanged) {
+        var (changePosition, changeRotation, changeScale) = GetParentPositionChange();
+        targetComponent.localPosition += changePosition;
+        KeepParentPosition();
+        _parentIdentity.transform.hasChanged = false;
+      }
+    }
+
+    private void FixedUpdate() {
+      if (isServer || IsClientWithAuthority) {
+        AdjustTargetPositionRelativeToParent();
+      }
+    }
+
+    private void LateUpdate() {
+      if (isServer || IsClientWithAuthority) {
+        AdjustTargetPositionRelativeToParent();
+      }
+    }
 
     private (Vector3, Quaternion, Vector3) GetParentOffsetPosition() {
       if (_parentIdentity) {
