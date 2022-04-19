@@ -16,9 +16,9 @@ namespace NetworkScripts {
     public int TickFrequency = 30;
 
 
-    private static NetworkTick   _networkTick;
-    private        uint          _networkTickNumber = 0;
-    private        TickPingState _tickPingState     = TickPingState.Initial;
+    private static NetworkTick   _networkTickInstance;
+    private        uint          _networkTick   = 0;
+    private        TickPingState _tickPingState = TickPingState.Initial;
 
     private int _forwardPhysicsSteps = 0;
     private int _skipPhysicsSteps    = 0;
@@ -29,7 +29,7 @@ namespace NetworkScripts {
     public override bool OnSerialize(NetworkWriter writer, bool initialState) {
       base.OnSerialize(writer, initialState);
       if (initialState) {
-        writer.WriteUInt(_networkTickNumber);
+        writer.WriteUInt(_networkTick);
         return true;
       }
 
@@ -39,7 +39,7 @@ namespace NetworkScripts {
     public override void OnDeserialize(NetworkReader reader, bool initialState) {
       base.OnDeserialize(reader, initialState);
       if (initialState) {
-        _networkTickNumber = reader.ReadUInt();
+        _networkTick = reader.ReadUInt();
       }
     }
 
@@ -47,19 +47,24 @@ namespace NetworkScripts {
 
   #region Tick Update Handling
 
+    [Client]
+    private void RequestServerSync() {
+      if (_networkTick % TickFrequency == 0) {
+        //
+      }
+    }
+
+    [Server]
     public virtual void ServerFixedUpdate(double deltaTime) { }
 
+    [Client]
     public virtual void ClientFixedUpdate(double deltaTime) { }
 
     public virtual void FixedUpdate() {
       if (!NetworkServer.active) return;
 
-      if (isServer) {
-        ServerFixedUpdate(Time.deltaTime);
-      }
-      else {
-        ClientFixedUpdate(Time.deltaTime);
-      }
+      if (isServer) ServerFixedUpdate(Time.deltaTime);
+      else ClientFixedUpdate(Time.deltaTime);
 
       PhysicsStepHandle();
     }
