@@ -3,9 +3,14 @@ using System.Collections.Generic;
 using UnityEngine;
 
 namespace NetworkScripts {
-  public class NetworkTick {
+  public struct zibi:  NtPositionPack{
+    
+  }
+  public class NetworkTick: DynamicNetworkTransform<zibi> {
     /* Configuratuins */
-
+    void func() {
+      SendInputs(new zibi()) ;
+    }
     //private static int _ticksPerSecond = Mathf.RoundToInt(1 / Time.deltaTime); // Get number ot ticks per second - more usefull for converting time to ticks
     private static int _ticksPerSecond = Mathf.RoundToInt(1 / Time.fixedDeltaTime); // Get number ot ticks per second - more usefull for converting time to ticks
 

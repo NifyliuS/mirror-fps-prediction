@@ -11,13 +11,14 @@ using UnityEngine.Animations;
     API Reference: https://mirror-networking.com/docs/api/Mirror.NetworkTransformBase.html
 */
 namespace NetworkScripts {
+ 
   public struct NtPositionPack {
     public Vector3?    Position;
     public Quaternion? Rotation;
     public Vector3?    Scale;
   }
 
-  public class DynamicNetworkTransform : NetworkTransformBase {
+  public class DynamicNetworkTransform<T> : NetworkTransformBase{
     protected override Transform       targetComponent        => transform;
     public             NetworkIdentity ParentNetworkIdentity  => _parentIdentity;
     public             Transform       ParentNetworkTransform => _parentIdentity ? _parentIdentity.transform : null;
@@ -39,6 +40,7 @@ namespace NetworkScripts {
     private Quaternion _oldParentRotation;
     private Vector3    _oldParentScale;
 
+    private T test { get; set; }
   #region Initialization
 
     private IEnumerator ResolveIdentity(uint newNetId) {
@@ -102,6 +104,11 @@ namespace NetworkScripts {
 
   #region Server CMDs
 
+   public void SendInputs(T inputs) {
+       if (! test.Equals(inputs)) {
+         test = inputs;
+       }
+    }
     [Command] //We want to make sure the NETID is sent since it is a one-off event
     public void CmdUpdateNetworkParent(NetworkIdentity identity, Vector3? position, Quaternion? rotation, Vector3? scale) {
       UpdateNetworkParent(identity, position, rotation, scale);
@@ -113,6 +120,8 @@ namespace NetworkScripts {
     public void CmdClearNetworkParent() {
       ClearNetworkParent();
       if (clientAuthority) RpcClearNetworkParent();
+
+      
     }
 
     [Command(channel = Channels.Unreliable)]
