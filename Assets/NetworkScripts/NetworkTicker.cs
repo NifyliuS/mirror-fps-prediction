@@ -18,6 +18,8 @@ namespace NetworkScripts {
       public int  TickFixAmount;
     }
 
+    private const uint InitialTickOffset = 5; //Initial guesstimate for client Tick offset from server ( server to client )
+
     [Header("Synchronization Settings")] [Tooltip("When client just connected how often should we ping the server: Every X ticks")]
     public int TickInitFrequency = 30;
 
@@ -28,10 +30,10 @@ namespace NetworkScripts {
     public int TickReSyncFrequency = 30;
 
 
-    private static uint          _initialTickOffset = 5; //Initial guesstimation for client Tick offset from server
     private static NetworkTick   _networkTickInstance;
-    private        uint          _networkTick   = 0;
-    private        TickPingState _tickPingState = TickPingState.Initial;
+    private        uint          _networkTick     = 0;
+    private        uint          _networkPeerTick = 0;
+    private        TickPingState _tickPingState   = TickPingState.Initial;
 
     private TickSyncerStateEnum _status              = TickSyncerStateEnum.Initializing;
     private int                 _forwardPhysicsSteps = 0;
@@ -57,8 +59,22 @@ namespace NetworkScripts {
     public override void OnDeserialize(NetworkReader reader, bool initialState) {
       base.OnDeserialize(reader, initialState);
       if (initialState) {
-        _networkTick = reader.ReadUInt() + _initialTickOffset;
+        uint serverTick = reader.ReadUInt();
+        _networkTick = serverTick + InitialTickOffset;     //Assume initial ping between client and server ( server to client )
+        _networkPeerTick = serverTick - InitialTickOffset; //Assume initial ping between client and server ( client to server to client )
       }
+    }
+
+  #endregion
+
+  #region Tick Ping Stabilization And Adjustment
+
+    public virtual bool ConsiderClientTickAdjustment() {
+      return false;
+    }
+
+    public virtual bool ConsiderPeerTickAdjustment() {
+      return false;
     }
 
   #endregion
@@ -78,6 +94,8 @@ namespace NetworkScripts {
         TickFixAmount = serverTickOffset,
         TickRTT = _networkTick - clientTick,
       });
+      ConsiderClientTickAdjustment();
+      ConsiderPeerTickAdjustment();
       Debug.Log($"clientTickTime = {_networkTick - clientTick} serverTickOffset = {serverTickOffset}");
     }
 
@@ -118,7 +136,9 @@ namespace NetworkScripts {
     }
 
     private void TickAdvance() {
-      _networkTick += GetDeltaTicks();
+      uint deltaTicks = GetDeltaTicks();
+      _networkTick += deltaTicks;
+      _networkPeerTick += deltaTicks;
     }
 
     public virtual void FixedUpdate() {
