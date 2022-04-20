@@ -137,8 +137,6 @@ namespace NetworkScripts {
               _reSyncTickCount++;
               CmdPingTick(_networkTick);
             }
-
-            ;
             else {
               _status = TickSyncerStateEnum.ReSyncPending; //Switch to pending state and wait for initialization resolution
               _reSyncTickCount = 0;
