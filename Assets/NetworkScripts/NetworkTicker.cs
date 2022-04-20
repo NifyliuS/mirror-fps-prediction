@@ -21,12 +21,11 @@ namespace NetworkScripts {
 
     private const uint InitialTickOffset = 5; //Initial guesstimate for client Tick offset from server ( server to client )
 
-    [Header("Synchronization Settings")] [Tooltip("When client just connected how often should we ping the server: Every X ticks")]
-    public int TickInitFrequency = 30;
-
     [Tooltip("How many pings to send before exiting initialization state")]
     public int TickInitThreshold = 12;
 
+    [Header("Synchronization Settings")] [Tooltip("When client just connected how often should we ping the server: Every X ticks")]
+    public int TickInitFrequency = 10;
 
     [Tooltip("When client is ready how often should we ping the server: Every X ticks")]
     public int TickFrequency = 30;
