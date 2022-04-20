@@ -116,6 +116,7 @@ namespace NetworkScripts {
             if (_initTickCount < TickInitThreshold) CmdPingTick(_networkTick);
             else _status = TickSyncerStateEnum.Pending; //Switch to pending state and wait for initialization resolution
             _initTickCount++;
+            //TODO: add server side ping dos protection
           }
 
           break;
