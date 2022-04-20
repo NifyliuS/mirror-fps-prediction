@@ -10,6 +10,7 @@ namespace NetworkScripts {
     private enum TickSyncerStateEnum {
       Initializing,
       Ready,
+      Pending,
       ReSyncing,
     }
 
@@ -22,6 +23,10 @@ namespace NetworkScripts {
 
     [Header("Synchronization Settings")] [Tooltip("When client just connected how often should we ping the server: Every X ticks")]
     public int TickInitFrequency = 30;
+
+    [Tooltip("How many pings to send before exiting initialization state")]
+    public int TickInitThreshold = 12;
+
 
     [Tooltip("When client is ready how often should we ping the server: Every X ticks")]
     public int TickFrequency = 30;
@@ -42,7 +47,7 @@ namespace NetworkScripts {
 
     private TickPingItem[] _tickPingHistory      = new TickPingItem[255]; // Circular buffer ping item history
     private int            _tickPingHistoryCount = 0;                     // Circular buffer ping item history counter
-
+    private int            _initTickCount        = 0;
 
   #region Initial Sync/Spawn
 
@@ -108,10 +113,13 @@ namespace NetworkScripts {
       switch (_status) {
         case TickSyncerStateEnum.Initializing:
           if (_networkTick % TickInitFrequency == 0) {
-            CmdPingTick(_networkTick);
+            if (_initTickCount < TickInitThreshold) CmdPingTick(_networkTick);
+            else _status = TickSyncerStateEnum.Pending; //Switch to pending state and wait for initialization resolution
+            _initTickCount++;
           }
 
           break;
+        case TickSyncerStateEnum.Pending: //Keep sending ticks in Pending state in case of lost packets or large latency
         case TickSyncerStateEnum.Ready:
           if (_networkTick % TickFrequency == 0) {
             CmdPingTick(_networkTick);
