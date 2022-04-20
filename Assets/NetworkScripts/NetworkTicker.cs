@@ -8,7 +8,7 @@ using UnityEngine;
 namespace NetworkScripts {
   public class NetworkTicker : NetworkBehaviour {
     private enum TickSyncerStateEnum {
-      Initial,
+      Initializing,
       Ready,
     }
 
@@ -17,11 +17,13 @@ namespace NetworkScripts {
 
 
     private static NetworkTick   _networkTickInstance;
-    private        uint          _networkTick   = 0;
-    private        TickPingState _tickPingState = TickPingState.Initial;
+    private        uint          _networkTick       = 0;
+    private        uint          _networkTickOffset = 5;
+    private        TickPingState _tickPingState     = TickPingState.Initial;
 
-    private int _forwardPhysicsSteps = 0;
-    private int _skipPhysicsSteps    = 0;
+    private TickSyncerStateEnum _status              = TickSyncerStateEnum.Initializing;
+    private int                 _forwardPhysicsSteps = 0;
+    private int                 _skipPhysicsSteps    = 0;
 
 
   #region Initial Sync/Spawn
@@ -45,12 +47,27 @@ namespace NetworkScripts {
 
   #endregion
 
+  #region Tick Ping Handling
+
+    [Command(requiresAuthority = false, channel = Channels.Unreliable)]
+    private void CmdPingTick(uint clientPing, NetworkConnectionToClient sender = null) {
+      RpcTickPong(sender, clientPing, (uint) (clientPing - _networkTick));
+    }
+
+    [TargetRpc(channel = Channels.Unreliable)]
+    private void RpcTickPong(NetworkConnection _, uint clientTick, uint serverTickOffset) {
+      Debug.Log($"serverTickOffset = {serverTickOffset}");
+      
+    }
+
+  #endregion
+
   #region Tick Update Handling
 
     [Client]
     private void RequestServerSync() {
       if (_networkTick % TickFrequency == 0) {
-        //
+        CmdPingTick((uint) (_networkTick + _networkTickOffset));
       }
     }
 
@@ -60,8 +77,13 @@ namespace NetworkScripts {
     [Client]
     public virtual void ClientFixedUpdate(double deltaTime) { }
 
+    private void TickAdvance() {
+      _networkTick += GetDeltaTicks();
+    }
+
     public virtual void FixedUpdate() {
       if (!NetworkServer.active) return;
+      TickAdvance();
 
       if (isServer) ServerFixedUpdate(Time.deltaTime);
       else ClientFixedUpdate(Time.deltaTime);
@@ -76,19 +98,19 @@ namespace NetworkScripts {
     private void PhysicsStepHandle() {
       if (_skipPhysicsSteps > 0) {
         _skipPhysicsSteps = NonNegativeValue(
-          PhysicStepSkip(Time.fixedDeltaTime, Time.deltaTime, GetDeltaTicks(), _skipPhysicsSteps)
+          PhysicStepSkip(Time.fixedDeltaTime, Time.deltaTime, (int) GetDeltaTicks(), _skipPhysicsSteps)
         );
         return;
       }
 
       if (_forwardPhysicsSteps > 0) {
         _forwardPhysicsSteps = NonNegativeValue(
-          PhysicStepFastForward(Time.fixedDeltaTime, Time.deltaTime, GetDeltaTicks(), _forwardPhysicsSteps)
+          PhysicStepFastForward(Time.fixedDeltaTime, Time.deltaTime, (int) GetDeltaTicks(), _forwardPhysicsSteps)
         );
         return;
       }
 
-      PhysicStep(Time.deltaTime, GetDeltaTicks());
+      PhysicStep(Time.deltaTime, (int) GetDeltaTicks());
     }
 
   #endregion
@@ -115,8 +137,8 @@ namespace NetworkScripts {
 
     private int NonNegativeValue(int value) => value > 0 ? value : 0;
 
-    private int GetDeltaTicks() {
-      return (int) (Time.deltaTime / Time.fixedDeltaTime);
+    private uint GetDeltaTicks() {
+      return (uint) (Time.deltaTime / Time.fixedDeltaTime);
     }
 
   #endregion
