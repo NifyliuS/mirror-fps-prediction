@@ -12,6 +12,7 @@ namespace NetworkScripts {
       Ready,
       Pending,
       ReSyncing,
+      ReSyncPending,
     }
 
     private struct TickPingItem {
@@ -25,13 +26,16 @@ namespace NetworkScripts {
     public int TickInitThreshold = 12;
 
     [Header("Synchronization Settings")] [Tooltip("When client just connected how often should we ping the server: Every X ticks")]
-    public int TickInitFrequency = 10;
+    public int TickInitFrequency = 1;
 
     [Tooltip("When client is ready how often should we ping the server: Every X ticks")]
     public int TickFrequency = 30;
 
     [Tooltip("When client is re-syncing how often should we ping the server: Every X ticks")]
-    public int TickReSyncFrequency = 30;
+    public int TickReSyncFrequency = 10;
+
+    [Tooltip("How many pings to send before exiting Re-Sync state")]
+    public int TickReSyncThreshold = 12;
 
 
     private static NetworkTick   _networkTickInstance;
@@ -47,6 +51,7 @@ namespace NetworkScripts {
     private TickPingItem[] _tickPingHistory      = new TickPingItem[255]; // Circular buffer ping item history
     private int            _tickPingHistoryCount = 0;                     // Circular buffer ping item history counter
     private int            _initTickCount        = 0;
+    private int            _reSyncTickCount      = 0;
 
   #region Initial Sync/Spawn
 
@@ -128,7 +133,17 @@ namespace NetworkScripts {
           break;
         case TickSyncerStateEnum.ReSyncing:
           if (_networkTick % TickReSyncFrequency == 0) {
-            CmdPingTick(_networkTick);
+            if (_reSyncTickCount < TickInitThreshold) {
+              _reSyncTickCount++;
+              CmdPingTick(_networkTick);
+            }
+
+            ;
+            else {
+              _status = TickSyncerStateEnum.ReSyncPending; //Switch to pending state and wait for initialization resolution
+              _reSyncTickCount = 0;
+            }
+            //TODO: add server side ping dos protection
           }
 
           break;
