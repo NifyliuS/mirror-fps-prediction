@@ -10,20 +10,36 @@ namespace NetworkScripts {
     private enum TickSyncerStateEnum {
       Initializing,
       Ready,
+      ReSyncing,
     }
 
-    [Header("Synchronization Settings")] [Tooltip("How often should the client verify if its in-sync with the server: Every X ticks")]
+    private struct TickPingItem {
+      public uint TickRTT;
+      public int  TickFixAmount;
+    }
+
+    [Header("Synchronization Settings")] [Tooltip("When client just connected how often should we ping the server: Every X ticks")]
+    public int TickInitFrequency = 30;
+
+    [Tooltip("When client is ready how often should we ping the server: Every X ticks")]
     public int TickFrequency = 30;
 
+    [Tooltip("When client is re-syncing how often should we ping the server: Every X ticks")]
+    public int TickReSyncFrequency = 30;
 
+
+    private static uint          _initialTickOffset = 5; //Initial guesstimation for client Tick offset from server
     private static NetworkTick   _networkTickInstance;
-    private        uint          _networkTick       = 0;
-    private        uint          _networkTickOffset = 5;
-    private        TickPingState _tickPingState     = TickPingState.Initial;
+    private        uint          _networkTick   = 0;
+    private        TickPingState _tickPingState = TickPingState.Initial;
 
     private TickSyncerStateEnum _status              = TickSyncerStateEnum.Initializing;
     private int                 _forwardPhysicsSteps = 0;
     private int                 _skipPhysicsSteps    = 0;
+    private uint                _lastPingRecieved    = 0;
+
+    private TickPingItem[] _tickPingHistory      = new TickPingItem[255]; // Circular buffer ping item history
+    private int            _tickPingHistoryCount = 0;                     // Circular buffer ping item history counter
 
 
   #region Initial Sync/Spawn
@@ -41,7 +57,7 @@ namespace NetworkScripts {
     public override void OnDeserialize(NetworkReader reader, bool initialState) {
       base.OnDeserialize(reader, initialState);
       if (initialState) {
-        _networkTick = reader.ReadUInt();
+        _networkTick = reader.ReadUInt() + _initialTickOffset;
       }
     }
 
@@ -50,14 +66,19 @@ namespace NetworkScripts {
   #region Tick Ping Handling
 
     [Command(requiresAuthority = false, channel = Channels.Unreliable)]
-    private void CmdPingTick(uint clientPing, NetworkConnectionToClient sender = null) {
-      RpcTickPong(sender, clientPing, (uint) (clientPing - _networkTick));
+    private void CmdPingTick(uint clientTick, NetworkConnectionToClient sender = null) {
+      RpcTickPong(sender, clientTick, (short) (_networkTick - clientTick));
     }
 
     [TargetRpc(channel = Channels.Unreliable)]
-    private void RpcTickPong(NetworkConnection _, uint clientTick, uint serverTickOffset) {
-      Debug.Log($"serverTickOffset = {serverTickOffset}");
-      
+    private void RpcTickPong(NetworkConnection _, uint clientTick, short serverTickOffset) {
+      if (_lastPingRecieved >= clientTick) return;
+      _lastPingRecieved = clientTick;
+      AddPingHistoryItem(new TickPingItem() {
+        TickFixAmount = serverTickOffset,
+        TickRTT = _networkTick - clientTick,
+      });
+      Debug.Log($"clientTickTime = {_networkTick - clientTick} serverTickOffset = {serverTickOffset}");
     }
 
   #endregion
@@ -66,8 +87,25 @@ namespace NetworkScripts {
 
     [Client]
     private void RequestServerSync() {
-      if (_networkTick % TickFrequency == 0) {
-        CmdPingTick((uint) (_networkTick + _networkTickOffset));
+      switch (_status) {
+        case TickSyncerStateEnum.Initializing:
+          if (_networkTick % TickInitFrequency == 0) {
+            CmdPingTick(_networkTick);
+          }
+
+          break;
+        case TickSyncerStateEnum.Ready:
+          if (_networkTick % TickFrequency == 0) {
+            CmdPingTick(_networkTick);
+          }
+
+          break;
+        case TickSyncerStateEnum.ReSyncing:
+          if (_networkTick % TickReSyncFrequency == 0) {
+            CmdPingTick(_networkTick);
+          }
+
+          break;
       }
     }
 
@@ -75,19 +113,21 @@ namespace NetworkScripts {
     public virtual void ServerFixedUpdate(double deltaTime) { }
 
     [Client]
-    public virtual void ClientFixedUpdate(double deltaTime) { }
+    public virtual void ClientFixedUpdate(double deltaTime) {
+      //RequestServerSync();
+    }
 
     private void TickAdvance() {
       _networkTick += GetDeltaTicks();
     }
 
     public virtual void FixedUpdate() {
-      if (!NetworkServer.active) return;
+      if (isClient) RequestServerSync();
+      /* Start Logic */
       TickAdvance();
-
       if (isServer) ServerFixedUpdate(Time.deltaTime);
       else ClientFixedUpdate(Time.deltaTime);
-
+      /* Update Physics */
       PhysicsStepHandle();
     }
 
@@ -140,6 +180,13 @@ namespace NetworkScripts {
     private uint GetDeltaTicks() {
       return (uint) (Time.deltaTime / Time.fixedDeltaTime);
     }
+
+    private void AddPingHistoryItem(TickPingItem item) {
+      _tickPingHistory[(byte) _tickPingHistoryCount] = item;
+      _tickPingHistoryCount++;
+    }
+
+    private TickPingItem GetPingHistoryItem(int index) => _tickPingHistory[(byte) index];
 
   #endregion
   }
