@@ -20,7 +20,19 @@ namespace NetworkScripts {
       public int  TickFixAmount;
     }
 
+    private struct ServerHeartBeatItem {
+      public uint LocalTick;
+      public uint RemoteTick;
+      public int  Offset;
+    }
+
     private const uint InitialTickOffset = 5; //Initial guesstimate for client Tick offset from server ( server to client )
+
+    [Tooltip("How often server sends his current tick to clients: Every X ticks")]
+    public int ServerTickHeartBeatFrequency = 30;
+
+    [Tooltip("Amout of ticks to Average out to smooth network inconsistencies")]
+    public int ServerTickAdjustmentSize = 12;
 
     [Tooltip("How many pings to send before exiting initialization state")]
     public int TickInitThreshold = 12;
@@ -37,11 +49,11 @@ namespace NetworkScripts {
     [Tooltip("How many pings to send before exiting Re-Sync state")]
     public int TickReSyncThreshold = 12;
 
+    [SerializeField] private TickPingState _tickPingState = TickPingState.Initial;
 
-    private static NetworkTick   _networkTickInstance;
-    private        uint          _networkTick     = 0;
-    private        uint          _networkPeerTick = 0;
-    private        TickPingState _tickPingState   = TickPingState.Initial;
+    private static NetworkTick _networkTickInstance;
+    private        uint        _networkTickBase   = 0;
+    private        uint        _networkTickOffset = 0;
 
     private TickSyncerStateEnum _status              = TickSyncerStateEnum.Initializing;
     private int                 _forwardPhysicsSteps = 0;
@@ -53,12 +65,16 @@ namespace NetworkScripts {
     private int            _initTickCount        = 0;
     private int            _reSyncTickCount      = 0;
 
+    private ServerHeartBeatItem[] _serverTickHBHistory = new ServerHeartBeatItem[255];
+    private int                   _serverTickHBCount   = 0;
+    private uint                  _lastServerHeartBeat = 0; //Used to avoid duplications
+
   #region Initial Sync/Spawn
 
     public override bool OnSerialize(NetworkWriter writer, bool initialState) {
       base.OnSerialize(writer, initialState);
       if (initialState) {
-        writer.WriteUInt(_networkTick);
+        writer.WriteUInt(_networkTickBase);
         return true;
       }
 
@@ -68,9 +84,7 @@ namespace NetworkScripts {
     public override void OnDeserialize(NetworkReader reader, bool initialState) {
       base.OnDeserialize(reader, initialState);
       if (initialState) {
-        uint serverTick = reader.ReadUInt();
-        _networkTick = serverTick + InitialTickOffset;     //Assume initial ping between client and server ( server to client )
-        _networkPeerTick = serverTick - InitialTickOffset; //Assume initial ping between client and server ( client to server to client )
+        _networkTickBase = reader.ReadUInt();
       }
     }
 
@@ -78,78 +92,38 @@ namespace NetworkScripts {
 
   #region Tick Ping Stabilization And Adjustment
 
-    public virtual bool ConsiderClientTickAdjustment() {
-      return false;
-    }
-
-    public virtual bool ConsiderPeerTickAdjustment() {
-      return false;
-    }
-
   #endregion
 
   #region Tick Ping Handling
 
-    [Command(requiresAuthority = false, channel = Channels.Unreliable)]
-    private void CmdPingTick(uint clientTick, NetworkConnectionToClient sender = null) {
-      RpcTickPong(sender, clientTick, (short) (_networkTick - clientTick));
+    [Server]
+    private void ServerTickHeartBeat() {
+      if (_networkTickBase % ServerTickHeartBeatFrequency == 0) {
+        RpcServerTickHeartBeat(_networkTickBase);
+      }
     }
 
-    [TargetRpc(channel = Channels.Unreliable)]
-    private void RpcTickPong(NetworkConnection _, uint clientTick, short serverTickOffset) {
-      if (_lastPingRecieved >= clientTick) return;
-      _lastPingRecieved = clientTick;
-      AddPingHistoryItem(new TickPingItem() {
-        TickFixAmount = serverTickOffset,
-        TickRTT = _networkTick - clientTick,
+    [ClientRpc]
+    private void RpcServerTickHeartBeat(uint serverTick) {
+      if (_lastServerHeartBeat >= serverTick) return; // Avoid old or duplicate ticks
+      _lastServerHeartBeat = serverTick;
+
+      AddTickHbItem(new ServerHeartBeatItem() {
+        LocalTick = _networkTickBase,
+        RemoteTick = serverTick,
+        Offset = (int) (_networkTickBase - serverTick)
       });
-      ConsiderClientTickAdjustment();
-      ConsiderPeerTickAdjustment();
-      Debug.Log($"clientTickTime = {_networkTick - clientTick} serverTickOffset = {serverTickOffset}");
+      Debug.Log($"_networkTick = {_networkTickBase} serverTick = {serverTick} = {(int) (_networkTickBase - serverTick)}");
     }
 
   #endregion
 
   #region Tick Update Handling
 
-    [Client]
-    private void RequestServerSync() {
-      switch (_status) {
-        case TickSyncerStateEnum.Initializing:
-          if (_networkTick % TickInitFrequency == 0) {
-            if (_initTickCount < TickInitThreshold) CmdPingTick(_networkTick);
-            else _status = TickSyncerStateEnum.Pending; //Switch to pending state and wait for initialization resolution
-            _initTickCount++;
-            //TODO: add server side ping dos protection
-          }
-
-          break;
-        case TickSyncerStateEnum.Pending: //Keep sending ticks in Pending state in case of lost packets or large latency
-        case TickSyncerStateEnum.Ready:
-          if (_networkTick % TickFrequency == 0) {
-            CmdPingTick(_networkTick);
-          }
-
-          break;
-        case TickSyncerStateEnum.ReSyncing:
-          if (_networkTick % TickReSyncFrequency == 0) {
-            if (_reSyncTickCount < TickInitThreshold) {
-              _reSyncTickCount++;
-              CmdPingTick(_networkTick);
-            }
-            else {
-              _status = TickSyncerStateEnum.ReSyncPending; //Switch to pending state and wait for initialization resolution
-              _reSyncTickCount = 0;
-            }
-            //TODO: add server side ping dos protection
-          }
-
-          break;
-      }
-    }
-
     [Server]
-    public virtual void ServerFixedUpdate(double deltaTime) { }
+    public virtual void ServerFixedUpdate(double deltaTime) {
+      ServerTickHeartBeat();
+    }
 
     [Client]
     public virtual void ClientFixedUpdate(double deltaTime) {
@@ -158,12 +132,11 @@ namespace NetworkScripts {
 
     private void TickAdvance() {
       uint deltaTicks = GetDeltaTicks();
-      _networkTick += deltaTicks;
-      _networkPeerTick += deltaTicks;
+      _networkTickBase += deltaTicks;
     }
 
     public virtual void FixedUpdate() {
-      if (isClient) RequestServerSync();
+      // if (isClient) RequestServerSync();
       /* Start Logic */
       TickAdvance();
       if (isServer) ServerFixedUpdate(Time.deltaTime);
@@ -175,6 +148,16 @@ namespace NetworkScripts {
   #endregion
 
   #region Physics Change Handling
+
+    // Queue physics adjustment
+    private void AdjustClientPhysicsTick(int tickAdjustment) {
+      if (tickAdjustment > 0) {
+        _forwardPhysicsSteps += tickAdjustment;
+      }
+      else {
+        _skipPhysicsSteps += -tickAdjustment;
+      }
+    }
 
     private void PhysicsStepHandle() {
       if (_skipPhysicsSteps > 0) {
@@ -214,21 +197,141 @@ namespace NetworkScripts {
 
   #endregion
 
+  #region Circular Buffer Functions
+
+    private void AddTickHbItem(ServerHeartBeatItem item) {
+      _serverTickHBHistory[(byte) _serverTickHBCount] = item;
+      _serverTickHBCount++;
+    }
+
+    private ServerHeartBeatItem GetTickHbItem(int index) => _serverTickHBHistory[(byte) index];
+
+  #endregion
+
   #region Helper Functions
 
-    private int NonNegativeValue(int value) => value > 0 ? value : 0;
+    private static int NonNegativeValue(int value) => value > 0 ? value : 0;
 
     private uint GetDeltaTicks() {
       return (uint) (Time.deltaTime / Time.fixedDeltaTime);
     }
 
-    private void AddPingHistoryItem(TickPingItem item) {
-      _tickPingHistory[(byte) _tickPingHistoryCount] = item;
-      _tickPingHistoryCount++;
+    private ServerHeartBeatItem[] GetTickHbCompareSequence() {
+      ServerHeartBeatItem[] result = new ServerHeartBeatItem[ServerTickAdjustmentSize];
+      for (int i = _serverTickHBCount - ServerTickAdjustmentSize; i < _serverTickHBCount; i++) {
+        result[i] = GetTickHbItem(i);
+      }
+
+      return result;
     }
 
-    private TickPingItem GetPingHistoryItem(int index) => _tickPingHistory[(byte) index];
+    private int[] ConvertHeartBeatToIntByOffset(ServerHeartBeatItem[] heartBeats) {
+      int[] result = new int[heartBeats.Length];
+      for (int i = 0; i < heartBeats.Length; i++) {
+        result[i] = heartBeats[i].Offset;
+      }
+
+      return result;
+    }
+
+    private static (int, int) GetMAxMinIndex(int[] array) {
+      if (array.Length == 0) return (-1, -1);
+      int minIndex = 0;
+      int maxIndex = 0;
+      int max = array[0];
+      int min = array[0];
+
+      for (int i = 0; i < array.Length; i++) {
+        if (max < array[i]) {
+          max = array[i];
+          maxIndex = i;
+        }
+
+        if (min > array[i]) {
+          min = array[i];
+          minIndex = i;
+        }
+      }
+
+      return (maxIndex, minIndex);
+    }
+
+    /* Average out ping numbers - exclude highest and lowest ping numbers ( ignores short spikes ) */
+    private float GetFilteredAverage(int[] array) {
+      (int maxIndex, int minIndex) = GetMAxMinIndex(array);
+      int sumCounter = 0;
+      float sum = 0;
+      for (int i = 0; i <= array.Length; i++) {
+        if (i != maxIndex && i != minIndex) {
+          sum += array[i];
+          sumCounter++;
+        }
+      }
+
+      return sum / sumCounter;
+    }
 
   #endregion
   }
 }
+
+// private void AddPingHistoryItem(TickPingItem item) {
+//   _tickPingHistory[(byte) _tickPingHistoryCount] = item;
+//   _tickPingHistoryCount++;
+// }
+//
+// private TickPingItem GetPingHistoryItem(int index) => _tickPingHistory[(byte) index];
+
+// [Command(requiresAuthority = false, channel = Channels.Unreliable)]
+// private void CmdPingTick(uint clientTick, NetworkConnectionToClient sender = null) {
+//   RpcTickPong(sender, clientTick, (short) (_networkTick - clientTick));
+// }
+//
+// [TargetRpc(channel = Channels.Unreliable)]
+// private void RpcTickPong(NetworkConnection _, uint clientTick, short serverTickOffset) {
+//   if (_lastPingRecieved >= clientTick) return;
+//   _lastPingRecieved = clientTick;
+//   AddPingHistoryItem(new TickPingItem() {
+//     TickFixAmount = serverTickOffset,
+//     TickRTT = _networkTick - clientTick,
+//   });
+//   ConsiderClientTickAdjustment();
+//   ConsiderPeerTickAdjustment();
+//   Debug.Log($"clientTickTime = {_networkTick - clientTick} serverTickOffset = {serverTickOffset}");
+// }
+
+// [Client]
+// private void RequestServerSync() {
+//   switch (_status) {
+//     case TickSyncerStateEnum.Initializing:
+//       if (_networkTick % TickInitFrequency == 0) {
+//         if (_initTickCount < TickInitThreshold) CmdPingTick(_networkTick);
+//         else _status = TickSyncerStateEnum.Pending; //Switch to pending state and wait for initialization resolution
+//         _initTickCount++;
+//         //TODO: add server side ping dos protection
+//       }
+//
+//       break;
+//     case TickSyncerStateEnum.Pending: //Keep sending ticks in Pending state in case of lost packets or large latency
+//     case TickSyncerStateEnum.Ready:
+//       if (_networkTick % TickFrequency == 0) {
+//         CmdPingTick(_networkTick);
+//       }
+//
+//       break;
+//     case TickSyncerStateEnum.ReSyncing:
+//       if (_networkTick % TickReSyncFrequency == 0) {
+//         if (_reSyncTickCount < TickInitThreshold) {
+//           _reSyncTickCount++;
+//           CmdPingTick(_networkTick);
+//         }
+//         else {
+//           _status = TickSyncerStateEnum.ReSyncPending; //Switch to pending state and wait for initialization resolution
+//           _reSyncTickCount = 0;
+//         }
+//         //TODO: add server side ping dos protection
+//       }
+//
+//       break;
+//   }
+// }

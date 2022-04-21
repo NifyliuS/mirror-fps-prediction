@@ -784,7 +784,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   syncMode: 0
   syncInterval: 0.1
+  ServerTickHeartBeatFrequency: 30
+  TickInitThreshold: 12
+  TickInitFrequency: 1
   TickFrequency: 30
+  TickReSyncFrequency: 10
+  TickReSyncThreshold: 12
 --- !u!4 &769418828
 Transform:
   m_ObjectHideFlags: 0
