@@ -132,9 +132,18 @@ namespace NetworkScripts {
         AdjustBaseTick(clientServerDiff);
         return;
       }
+
+      _lastTickAdjustmentRequest = 0;
     }
 
+    private int _lastTickAdjustmentRequest = 0;
+
     private void AdjustBaseTick(int adjustment) {
+      if (_lastTickAdjustmentRequest != adjustment) {
+        _lastTickAdjustmentRequest = adjustment;
+        return;
+      }
+
       Debug.Log($"AdjustBaseTick({adjustment})");
       if (adjustment > 0) {
         _networkTickBase -= (uint) adjustment;
@@ -143,6 +152,7 @@ namespace NetworkScripts {
         _networkTickBase -= (uint) adjustment;
       }
 
+      _lastTickAdjustmentRequest = 0;
       _serverTickHBHistory = new ServerHeartBeatItem[256];
       _serverTickHBCount = 0;
       _serverTickExponentialAverage = new ExponentialMovingAverage(ServerTickAdjustmentSize);
