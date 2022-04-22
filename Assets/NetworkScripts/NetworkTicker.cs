@@ -22,17 +22,18 @@ namespace NetworkScripts {
       public int  Offset;
     }
 
-    [Tooltip("How often server sends his current tick to clients: Every X ticks")]
-    public static int ServerTickHeartBeatFrequency = 30;
 
     [Tooltip("Amout of ticks to Average out to smooth network inconsistencies")]
     public static int ServerTickAdjustmentSize = 7;
 
-    [Tooltip("By what amount client has to be behind before base tick adjustment")]
-    public int ServerTickAdjustmentBehindThreshhold = 0;
+    [Tooltip("How often server sends his current tick to clients: Every X ticks")]
+    public byte ServerTickHeartBeatFrequency = 30;
 
-    [Tooltip("By what amount client has to be ahead before base tick adjustment")]
-    public int ServerTickAdjustmentForwardThreshhold = 1;
+    [Tooltip("By what amount client has to be behind before base tick adjustment ( recommended 0 )")]
+    public byte ServerTickAdjustmentBehindThreshhold = 0;
+
+    [Tooltip("By what amount client has to be ahead before base tick adjustment ( recommended 1 )")]
+    public byte ServerTickAdjustmentForwardThreshhold = 1;
     // [Tooltip("How many pings to send before exiting initialization state")]
     // public int TickInitThreshold = 12;
     //
@@ -69,6 +70,7 @@ namespace NetworkScripts {
     private ServerHeartBeatItem[]    _serverTickHBHistory          = new ServerHeartBeatItem[256];
     private int                      _serverTickHBCount            = 0;
     private uint                     _lastServerHeartBeat          = 0; //Used to avoid duplications
+    private int                      _lastTickAdjustmentRequest    = 0;
 
   #region Initial Sync/Spawn
 
@@ -137,7 +139,6 @@ namespace NetworkScripts {
       _lastTickAdjustmentRequest = 0;
     }
 
-    private int _lastTickAdjustmentRequest = 0;
 
     private void AdjustBaseTick(int adjustment) {
       if (_lastTickAdjustmentRequest != adjustment) {
