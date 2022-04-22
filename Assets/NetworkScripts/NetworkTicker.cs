@@ -1,8 +1,4 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
 using Mirror;
-using NetworkScripts;
 using UnityEngine;
 
 namespace NetworkScripts {
@@ -26,30 +22,34 @@ namespace NetworkScripts {
       public int  Offset;
     }
 
-    private const uint InitialTickOffset = 5; //Initial guesstimate for client Tick offset from server ( server to client )
-
     [Tooltip("How often server sends his current tick to clients: Every X ticks")]
-    public int ServerTickHeartBeatFrequency = 30;
+    public static int ServerTickHeartBeatFrequency = 30;
 
     [Tooltip("Amout of ticks to Average out to smooth network inconsistencies")]
-    public int ServerTickAdjustmentSize = 12;
+    public static int ServerTickAdjustmentSize = 7;
 
-    [Tooltip("How many pings to send before exiting initialization state")]
-    public int TickInitThreshold = 12;
+    [Tooltip("By what amount client has to be behind before base tick adjustment")]
+    public int ServerTickAdjustmentBehindThreshhold = 0;
 
-    [Header("Synchronization Settings")] [Tooltip("When client just connected how often should we ping the server: Every X ticks")]
-    public int TickInitFrequency = 1;
+    [Tooltip("By what amount client has to be ahead before base tick adjustment")]
+    public int ServerTickAdjustmentForwardThreshhold = 1;
+    // [Tooltip("How many pings to send before exiting initialization state")]
+    // public int TickInitThreshold = 12;
+    //
+    // [Header("Synchronization Settings")] [Tooltip("When client just connected how often should we ping the server: Every X ticks")]
+    // public int TickInitFrequency = 1;
+    //
+    // [Tooltip("When client is ready how often should we ping the server: Every X ticks")]
+    // public int TickFrequency = 30;
+    //
+    // [Tooltip("When client is re-syncing how often should we ping the server: Every X ticks")]
+    // public int TickReSyncFrequency = 10;
+    //
+    // [Tooltip("How many pings to send before exiting Re-Sync state")]
+    // public int TickReSyncThreshold = 12;
 
-    [Tooltip("When client is ready how often should we ping the server: Every X ticks")]
-    public int TickFrequency = 30;
-
-    [Tooltip("When client is re-syncing how often should we ping the server: Every X ticks")]
-    public int TickReSyncFrequency = 10;
-
-    [Tooltip("How many pings to send before exiting Re-Sync state")]
-    public int TickReSyncThreshold = 12;
-
-    [SerializeField] private TickPingState _tickPingState = TickPingState.Initial;
+    private const            uint          InitialTickOffset = 5; //Initial guesstimate for client Tick offset from server ( server to client )
+    [SerializeField] private TickPingState _tickPingState    = TickPingState.Initial;
 
     private static NetworkTick _networkTickInstance;
     private        uint        _networkTickBase   = 0;
@@ -60,14 +60,15 @@ namespace NetworkScripts {
     private int                 _skipPhysicsSteps    = 0;
     private uint                _lastPingRecieved    = 0;
 
-    private TickPingItem[] _tickPingHistory      = new TickPingItem[255]; // Circular buffer ping item history
+    private TickPingItem[] _tickPingHistory      = new TickPingItem[256]; // Circular buffer ping item history
     private int            _tickPingHistoryCount = 0;                     // Circular buffer ping item history counter
     private int            _initTickCount        = 0;
     private int            _reSyncTickCount      = 0;
 
-    private ServerHeartBeatItem[] _serverTickHBHistory = new ServerHeartBeatItem[255];
-    private int                   _serverTickHBCount   = 0;
-    private uint                  _lastServerHeartBeat = 0; //Used to avoid duplications
+    private ExponentialMovingAverage _serverTickExponentialAverage = new ExponentialMovingAverage(ServerTickAdjustmentSize);
+    private ServerHeartBeatItem[]    _serverTickHBHistory          = new ServerHeartBeatItem[256];
+    private int                      _serverTickHBCount            = 0;
+    private uint                     _lastServerHeartBeat          = 0; //Used to avoid duplications
 
   #region Initial Sync/Spawn
 
@@ -103,17 +104,48 @@ namespace NetworkScripts {
       }
     }
 
-    [ClientRpc]
+    [ClientRpc(channel = Channels.Unreliable)]
     private void RpcServerTickHeartBeat(uint serverTick) {
-      if (_lastServerHeartBeat >= serverTick) return; // Avoid old or duplicate ticks
+      if (isServer || _lastServerHeartBeat >= serverTick) return; // Avoid old or duplicate ticks
       _lastServerHeartBeat = serverTick;
-
       AddTickHbItem(new ServerHeartBeatItem() {
         LocalTick = _networkTickBase,
         RemoteTick = serverTick,
         Offset = (int) (_networkTickBase - serverTick)
       });
-      Debug.Log($"_networkTick = {_networkTickBase} serverTick = {serverTick} = {(int) (_networkTickBase - serverTick)}");
+      float average = GetFilteredAverage(ConvertHeartBeatToIntByOffset(GetTickHbCompareSequence()));
+
+      Debug.Log(
+        $"_networkTick = {_networkTickBase} serverTick = {serverTick} = {(int) (_networkTickBase - serverTick)} == [{Mathf.RoundToInt(average)}] / [{Mathf.RoundToInt((float) _serverTickExponentialAverage.Value)} || [{average}] / [{_serverTickExponentialAverage.Value}");
+      ConsiderBaseTickAdjustment();
+    }
+
+    private void ConsiderBaseTickAdjustment() {
+      float average = GetFilteredAverage(ConvertHeartBeatToIntByOffset(GetTickHbCompareSequence()));
+      int clientServerDiff = Mathf.RoundToInt(average);
+
+      if (clientServerDiff > ServerTickAdjustmentForwardThreshhold) {
+        AdjustBaseTick(clientServerDiff);
+      }
+
+      if (clientServerDiff < -ServerTickAdjustmentBehindThreshhold) {
+        AdjustBaseTick(clientServerDiff);
+        return;
+      }
+    }
+
+    private void AdjustBaseTick(int adjustment) {
+      Debug.Log($"AdjustBaseTick({adjustment})");
+      if (adjustment > 0) {
+        _networkTickBase -= (uint) adjustment;
+      }
+      else {
+        _networkTickBase -= (uint) adjustment;
+      }
+
+      _serverTickHBHistory = new ServerHeartBeatItem[256];
+      _serverTickHBCount = 0;
+      _serverTickExponentialAverage = new ExponentialMovingAverage(ServerTickAdjustmentSize);
     }
 
   #endregion
@@ -204,7 +236,9 @@ namespace NetworkScripts {
       _serverTickHBCount++;
     }
 
-    private ServerHeartBeatItem GetTickHbItem(int index) => _serverTickHBHistory[(byte) index];
+    private ServerHeartBeatItem GetTickHbItem(int index) {
+      return _serverTickHBHistory[(byte) index];
+    }
 
   #endregion
 
@@ -218,8 +252,9 @@ namespace NetworkScripts {
 
     private ServerHeartBeatItem[] GetTickHbCompareSequence() {
       ServerHeartBeatItem[] result = new ServerHeartBeatItem[ServerTickAdjustmentSize];
-      for (int i = _serverTickHBCount - ServerTickAdjustmentSize; i < _serverTickHBCount; i++) {
-        result[i] = GetTickHbItem(i);
+      int offset = _serverTickHBCount - ServerTickAdjustmentSize;
+      for (int i = 0; i < ServerTickAdjustmentSize; i++) {
+        result[i] = GetTickHbItem(i + offset);
       }
 
       return result;
@@ -261,12 +296,15 @@ namespace NetworkScripts {
       (int maxIndex, int minIndex) = GetMAxMinIndex(array);
       int sumCounter = 0;
       float sum = 0;
-      for (int i = 0; i <= array.Length; i++) {
+
+      for (int i = 0; i < array.Length; i++) {
         if (i != maxIndex && i != minIndex) {
           sum += array[i];
+          _serverTickExponentialAverage.Add(array[i]);
           sumCounter++;
         }
       }
+
 
       return sum / sumCounter;
     }
