@@ -126,6 +126,7 @@ namespace NetworkScripts {
 
       if (clientServerDiff > ServerTickAdjustmentForwardThreshhold) {
         AdjustBaseTick(clientServerDiff);
+        return;
       }
 
       if (clientServerDiff < -ServerTickAdjustmentBehindThreshhold) {
