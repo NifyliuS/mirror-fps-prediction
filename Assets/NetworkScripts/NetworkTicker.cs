@@ -101,7 +101,8 @@ namespace NetworkScripts {
         case TickSyncerStateEnum.Initializing:
         case TickSyncerStateEnum.Ready:
           if (_networkTickBase % CleintTickPingFrequency == 0) {
-            CmdPingTick(_networkTickBase); // send current base tick - server should return the time it took to arrive
+            CmdPingTick((uint)(_networkTickBase + _networkTickOffset+ _networkTickOffset)); // send current base tick - server should return the time it took to arrive
+            Debug.Log($"clientServerDiff ---->> [{_networkTickBase}] // [{(uint)(_networkTickBase + _networkTickOffset)}] == {_networkTickOffset}");
           }
 
           break;
@@ -112,7 +113,7 @@ namespace NetworkScripts {
 
     [Command(requiresAuthority = false, channel = Channels.Unreliable)]
     private void CmdPingTick(uint clientTick, NetworkConnectionToClient sender = null) {
-      RpcTickPong(sender, clientTick, (short) (_networkTickBase - clientTick));
+      RpcTickPong(sender, clientTick, (short) (clientTick - _networkTickBase)); //return client predicted tick vs server local tick ( value must be positive or the client is behind on its predictions )
     }
 
     [TargetRpc(channel = Channels.Unreliable)]
@@ -124,7 +125,7 @@ namespace NetworkScripts {
       });
 
       if (_status == TickSyncerStateEnum.Initializing) {
-        _networkTickOffset = serverTickOffset;
+        //_networkTickOffset = serverTickOffset;
         _status = TickSyncerStateEnum.Ready;
         return;
       }
@@ -196,6 +197,9 @@ namespace NetworkScripts {
 
       _networkTickBase -= (uint) adjustment;
       _networkTickOffset += adjustment;  //We also move the network offset ( since base tick is sensitive to latency )
+      if (_networkTickOffset < 0) {
+        _networkTickOffset = 0;
+      }
       Debug.Log($"clientServerDiff ------- {adjustment}");
       ResetBuffers();
       AdjustClientPhysicsTick(adjustment);
