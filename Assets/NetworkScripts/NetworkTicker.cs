@@ -146,14 +146,12 @@ namespace NetworkScripts {
         return;
       }
 
-      Debug.Log($"AdjustBaseTick({adjustment})");
-      if (adjustment > 0) {
-        _networkTickBase -= (uint) adjustment;
-      }
-      else {
-        _networkTickBase -= (uint) adjustment;
-      }
+      _networkTickBase -= (uint) adjustment;
+      ResetBuffers();
+      AdjustClientPhysicsTick(adjustment);
+    }
 
+    private void ResetBuffers() {
       _lastTickAdjustmentRequest = 0;
       _serverTickHBHistory = new ServerHeartBeatItem[256];
       _serverTickHBCount = 0;
