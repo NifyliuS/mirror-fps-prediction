@@ -14,13 +14,20 @@ namespace NetworkScripts {
     }
 
     private struct HeartBeat {
-      public byte LocalTickFraction;
-      public uint ServerTick;
-      public int  TickOffset;
+      public byte  ClientTickFraction;
+      public uint  ServerTick;
+      public short TickOffset;
     }
 
-    private Buffer256<HeartBeat> _heartBeatBuffer = new Buffer256<HeartBeat>();
+    private struct SyncResponse {
+      public byte  ClientTickFraction;
+      public byte  ServerTickFraction;
+      public uint  ServerTick;
+      public short TickOffset;
+    }
 
+    private Buffer256<HeartBeat>    _heartBeatBuffer = new Buffer256<HeartBeat>();
+    private Buffer256<SyncResponse> _syncBuffer      = new Buffer256<SyncResponse>();
 
     private TickSyncerStateEnum _state = TickSyncerStateEnum.Initializing; //Defined in what state the NetworkTicker is
 
@@ -47,8 +54,8 @@ namespace NetworkScripts {
     public byte ClientBaseTickForwardThreshhold = 0; //Allow the client base tick to be x ticks ahead
 
 
-    private uint _networkTickBase   = 0; //Client wont execute server commands marked with tick lower than this value
-    private int  _networkTickOffset = 0; //Used to calculate how far the client should be further in the future than the server
+    private uint  _networkTickBase   = 0; //Client wont execute server commands marked with tick lower than this value
+    private float _networkTickOffset = 0; //Used to calculate how far the client should be further in the future than the server
 
     private uint _lastHeartBeatTick         = 0; //Used to ignore older or duplicate entries from the server
     private uint _lastSyncTick              = 0; //Used to ignore older or duplicate entries from the server syncing
@@ -96,53 +103,44 @@ namespace NetworkScripts {
     private void RpcServerTickHeartBeat(uint serverTick) {
       if (_lastHeartBeatTick >= serverTick) return;
       byte fraction = GetTickFraction(); // Get tick fraction as soon as possible
+      CmdPingTick(serverTick);
       _heartBeatBuffer.Add(new HeartBeat() {
-        LocalTickFraction = fraction,
+        ClientTickFraction = fraction,
         ServerTick = serverTick,
-        TickOffset = (int) (serverTick - _networkTickBase),
+        TickOffset = (short) (serverTick - _networkTickBase),
       });
-
-
-      Debug.Log($"FRACTION ====> {_heartBeatBuffer.GetLast().TickOffset} / {_heartBeatBuffer.GetLast().LocalTickFraction}");
-
-
-      AddTickHbItem((int) (serverTick - _networkTickBase));
-      ConsiderBaseTickAdjustment();
-      _isTickSyncQueued = true;
       if (_state == TickSyncerStateEnum.Initializing) {
         _state = TickSyncerStateEnum.Syncing;
         _networkTickBase = serverTick;
       }
 
       _lastHeartBeatTick = serverTick;
-      // Debug.Log($"LBT[{_networkTickBase}] - SBT[{serverTick}] == [{(int) (serverTick - _networkTickBase)}]");
     }
-
-    [Client]
-    private void ServerTickSync() { }
 
 
     [Command(requiresAuthority = false, channel = Channels.Unreliable)]
     private void CmdPingTick(uint clientTick, NetworkConnectionToClient sender = null) {
-      RpcTickPong(sender, clientTick, (short) (clientTick - _networkTickBase)); //Return server-client tick difference ( positive = client is ahead )
+      byte fraction = GetTickFraction();                                                        // Get tick fraction as soon as possible
+      RpcTickPong(sender, _networkTickBase, (short) (clientTick - _networkTickBase), fraction); //Return server-client tick difference ( positive = client is ahead )
     }
 
     [TargetRpc(channel = Channels.Unreliable)]
-    private void RpcTickPong(NetworkConnection _, uint syncTick, short serverTickOffset) {
-      if (_lastSyncTick >= syncTick) return;
-      _lastSyncTick = syncTick;
+    private void RpcTickPong(NetworkConnection _, uint serverTick, short serverTickOffset, byte tickFraction) {
+      if (_lastSyncTick >= serverTick) return;
+      byte fraction = GetTickFraction(); // Get tick fraction as soon as possible
+      _syncBuffer.Add(new SyncResponse() {
+        ServerTick = serverTick,
+        TickOffset = serverTickOffset,
+        ClientTickFraction = fraction,
+        ServerTickFraction = tickFraction
+      });
       if (_state == TickSyncerStateEnum.Syncing) {
         _state = TickSyncerStateEnum.Ready;
-        _networkTickOffset = NonNegativeValue(-serverTickOffset);
-      }
-      else {
-        AddTickOffsetItem(serverTickOffset);
+        _networkTickBase = serverTick;
+        _networkTickOffset = serverTickOffset + tickFraction / 100;
       }
 
-      int tickRTT = (int) (_networkTickBase - syncTick);
-      float average = GetFilteredAverage(GetTickOffsetCompareSequence());
-      int clientServerDiff = Mathf.RoundToInt(average);
-      Debug.Log($"LT[{_networkTickBase}] / LTO[{_networkTickOffset}] - RTT[{tickRTT}] STO[{serverTickOffset}] -  STOA[{clientServerDiff}] == [{average}]");
+      _lastSyncTick = serverTick;
     }
 
   #endregion
