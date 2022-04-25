@@ -16,7 +16,7 @@ namespace NetworkScripts {
     private struct HeartBeat {
       public byte LocalTickFraction;
       public uint ServerTick;
-      public int TickOffset;
+      public int  TickOffset;
     }
 
     private Buffer256<HeartBeat> _heartBeatBuffer = new Buffer256<HeartBeat>();
@@ -95,15 +95,15 @@ namespace NetworkScripts {
     [ClientRpc(channel = Channels.Unreliable)]
     private void RpcServerTickHeartBeat(uint serverTick) {
       if (_lastHeartBeatTick >= serverTick) return;
-      byte fraction = GetTickFraction();  // Get tick fraction as soon as possible
+      byte fraction = GetTickFraction(); // Get tick fraction as soon as possible
       _heartBeatBuffer.Add(new HeartBeat() {
         LocalTickFraction = fraction,
         ServerTick = serverTick,
         TickOffset = (int) (serverTick - _networkTickBase),
       });
-      
-     
-      Debug.Log($"FRACTION ====> {fraction} / {Time.fixedDeltaTime}");
+
+
+      Debug.Log($"FRACTION ====> {_heartBeatBuffer.GetLast().TickOffset} / {_heartBeatBuffer.GetLast().LocalTickFraction}");
 
 
       AddTickHbItem((int) (serverTick - _networkTickBase));
@@ -231,8 +231,7 @@ namespace NetworkScripts {
 
 
     public virtual void FixedUpdate() {
-      /* Start Logic */
-      _lastTickStart = Time.timeAsDouble;
+      _lastTickStart = Time.fixedTimeAsDouble;
       TickAdvance();
       if (isServer) ServerFixedUpdate(Time.deltaTime);
       else ClientFixedUpdate(Time.deltaTime);

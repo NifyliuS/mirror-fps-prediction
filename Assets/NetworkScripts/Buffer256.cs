@@ -13,7 +13,7 @@
     }
 
     public T GetLast() {
-      return _buffer[(byte) _bufferCount];
+      return _buffer[(byte) _bufferCount-1];
     }
 
     public void Clear() {
