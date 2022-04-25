@@ -13,6 +13,14 @@ namespace NetworkScripts {
       OutOfSync,
     }
 
+    private struct HeartBeat {
+      public byte LocalTickFraction;
+      public uint ServerTick;
+      public int TickOffset;
+    }
+
+    private Buffer256<HeartBeat> _heartBeatBuffer = new Buffer256<HeartBeat>();
+
 
     private TickSyncerStateEnum _state = TickSyncerStateEnum.Initializing; //Defined in what state the NetworkTicker is
 
@@ -46,11 +54,12 @@ namespace NetworkScripts {
     private uint _lastSyncTick              = 0; //Used to ignore older or duplicate entries from the server syncing
     private int  _lastTickAdjustmentRequest = 0; //Used to avoid changing ticks due to network spikes ( used for consistency )
 
-    private int[] _serverTickHBHistory     = new int[256];
-    private int   _serverTickHBCount       = 0;
-    private int[] _serverTickOffsetHistory = new int[256];
-    private int   _serverTickOffsetCount   = 0;
-    private bool  _isTickSyncQueued        = false;
+    private int[]  _serverTickHBHistory     = new int[256];
+    private int    _serverTickHBCount       = 0;
+    private int[]  _serverTickOffsetHistory = new int[256];
+    private int    _serverTickOffsetCount   = 0;
+    private bool   _isTickSyncQueued        = false;
+    private double _lastTickStart; //Used to calculate time from tick start
 
   #region Initial Sync/Spawn
 
@@ -83,19 +92,20 @@ namespace NetworkScripts {
       }
     }
 
-    [Client]
-    private void ServerTickSync() {
-      //if (_networkTickBase % ServerTickOffsetSyncFrequency == 0 && _state != TickSyncerStateEnum.Initializing) {
-      if (_isTickSyncQueued) {
-        CmdPingTick((uint) (_networkTickBase + _networkTickOffset));
-        _isTickSyncQueued = false;
-      }
-    }
-
     [ClientRpc(channel = Channels.Unreliable)]
     private void RpcServerTickHeartBeat(uint serverTick) {
       if (_lastHeartBeatTick >= serverTick) return;
-      _lastHeartBeatTick = serverTick;
+      byte fraction = GetTickFraction();  // Get tick fraction as soon as possible
+      _heartBeatBuffer.Add(new HeartBeat() {
+        LocalTickFraction = fraction,
+        ServerTick = serverTick,
+        TickOffset = (int) (serverTick - _networkTickBase),
+      });
+      
+     
+      Debug.Log($"FRACTION ====> {fraction} / {Time.fixedDeltaTime}");
+
+
       AddTickHbItem((int) (serverTick - _networkTickBase));
       ConsiderBaseTickAdjustment();
       _isTickSyncQueued = true;
@@ -104,8 +114,12 @@ namespace NetworkScripts {
         _networkTickBase = serverTick;
       }
 
-     // Debug.Log($"LBT[{_networkTickBase}] - SBT[{serverTick}] == [{(int) (serverTick - _networkTickBase)}]");
+      _lastHeartBeatTick = serverTick;
+      // Debug.Log($"LBT[{_networkTickBase}] - SBT[{serverTick}] == [{(int) (serverTick - _networkTickBase)}]");
     }
+
+    [Client]
+    private void ServerTickSync() { }
 
 
     [Command(requiresAuthority = false, channel = Channels.Unreliable)]
@@ -148,6 +162,7 @@ namespace NetworkScripts {
       else {
         _lastTickAdjustmentRequest = 0;
       }
+
       ConsiderOffsetAdjustment(baseTickAdjustment);
     }
 
@@ -168,7 +183,6 @@ namespace NetworkScripts {
         return;
       }
 //_networkTickOffset = NonNegativeValue(_networkTickOffset - adjustment * 2); //Adjust the offset as well - usually this will be caused by change in latency
-      
     }
 
     private int AdjustBaseTick(int adjustment) {
@@ -178,7 +192,7 @@ namespace NetworkScripts {
       }
 
       /* We want to be at the same tick as the server or 1 tick ahead of the server */
-      _networkTickBase += (uint) adjustment;                                      //Adjust the base tick by the amout changed due to latency
+      _networkTickBase += (uint) adjustment; //Adjust the base tick by the amout changed due to latency
 
       ResetBuffers();
       AdjustClientPhysicsTick(adjustment);
@@ -208,17 +222,17 @@ namespace NetworkScripts {
     }
 
     [Client]
-    public virtual void ClientFixedUpdate(double deltaTime) {
-      ServerTickSync(); //Send right after tick update to increase consistency
-    }
+    public virtual void ClientFixedUpdate(double deltaTime) { }
 
     private void TickAdvance() {
       uint deltaTicks = GetDeltaTicks();
       _networkTickBase += deltaTicks;
     }
 
+
     public virtual void FixedUpdate() {
       /* Start Logic */
+      _lastTickStart = Time.timeAsDouble;
       TickAdvance();
       if (isServer) ServerFixedUpdate(Time.deltaTime);
       else ClientFixedUpdate(Time.deltaTime);
@@ -279,6 +293,7 @@ namespace NetworkScripts {
 
   #endregion
 
+
   #region Helper Functions
 
     private void AddTickHbItem(int item) {
@@ -323,6 +338,13 @@ namespace NetworkScripts {
 
     private uint GetDeltaTicks() {
       return (uint) (Time.deltaTime / Time.fixedDeltaTime);
+    }
+
+    //Even though we split each tick to 100 sometimes we see 104 or larger ticks - we allow for this by not using 255 split but using byte to transfer
+    private byte GetTickFraction() {
+      int tickFraction = Mathf.RoundToInt((float) ((Time.timeAsDouble - _lastTickStart) / Time.fixedDeltaTime * 100));
+      if (tickFraction > 255) tickFraction = 255;
+      return (byte) (tickFraction);
     }
 
     private static (int, int) GetMAxMinIndex(int[] array) {
