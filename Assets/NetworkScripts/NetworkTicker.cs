@@ -24,7 +24,7 @@ namespace NetworkScripts {
     public static int ServerTickAdjustmentSize = 7;
 
     [Tooltip("Amout of ticks to Average out to smooth network inconsistencies - Tick Offset")]
-    public static int ServerTickOffsetAdjustmentSize = 12;
+    public static int ServerTickOffsetAdjustmentSize = 7;
 
     [Tooltip("How often server sends his current tick to clients: Every X ticks")]
     public byte ServerTickHeartBeatFrequency = 30;
@@ -78,17 +78,17 @@ namespace NetworkScripts {
 
     [Server]
     private void ServerTickHeartBeat() {
-      //if (_networkTickBase % ServerTickHeartBeatFrequency == 0) {
-      if (_isTickSyncQueued) {
+      if (_networkTickBase % ServerTickHeartBeatFrequency == 0) {
         RpcServerTickHeartBeat(_networkTickBase);
-        _isTickSyncQueued = false;
       }
     }
 
     [Client]
     private void ServerTickSync() {
-      if (_networkTickBase % ServerTickOffsetSyncFrequency == 0 && _state != TickSyncerStateEnum.Initializing) {
+      //if (_networkTickBase % ServerTickOffsetSyncFrequency == 0 && _state != TickSyncerStateEnum.Initializing) {
+      if (_isTickSyncQueued) {
         CmdPingTick((uint) (_networkTickBase + _networkTickOffset));
+        _isTickSyncQueued = false;
       }
     }
 
@@ -103,6 +103,8 @@ namespace NetworkScripts {
         _state = TickSyncerStateEnum.Syncing;
         _networkTickBase = serverTick;
       }
+
+     // Debug.Log($"LBT[{_networkTickBase}] - SBT[{serverTick}] == [{(int) (serverTick - _networkTickBase)}]");
     }
 
 
@@ -115,16 +117,15 @@ namespace NetworkScripts {
     private void RpcTickPong(NetworkConnection _, uint syncTick, short serverTickOffset) {
       if (_lastSyncTick >= syncTick) return;
       _lastSyncTick = syncTick;
-      int tickRTT = (int) (_networkTickBase - syncTick);
-      // AddTickOffsetItem(Math.Min(serverTickOffset, tickRTT));
-      AddTickOffsetItem(serverTickOffset);
       if (_state == TickSyncerStateEnum.Syncing) {
         _state = TickSyncerStateEnum.Ready;
-        _networkTickOffset = serverTickOffset;
-        SetTickOffsetHistory(_networkTickOffset);
+        _networkTickOffset = NonNegativeValue(-serverTickOffset);
+      }
+      else {
+        AddTickOffsetItem(serverTickOffset);
       }
 
-
+      int tickRTT = (int) (_networkTickBase - syncTick);
       float average = GetFilteredAverage(GetTickOffsetCompareSequence());
       int clientServerDiff = Mathf.RoundToInt(average);
       Debug.Log($"LT[{_networkTickBase}] / LTO[{_networkTickOffset}] - RTT[{tickRTT}] STO[{serverTickOffset}] -  STOA[{clientServerDiff}] == [{average}]");
@@ -137,33 +138,52 @@ namespace NetworkScripts {
     private void ConsiderBaseTickAdjustment() {
       float average = GetFilteredAverage(GetTickHbCompareSequence());
       int clientServerDiff = Mathf.RoundToInt(average);
-
+      int baseTickAdjustment = 0;
       if (
         clientServerDiff < -ClientBaseTickForwardThreshhold  //Cleint is behind of the server below threshhold
         || clientServerDiff > ClientBaseTickBehindThreshhold //Cleint is ahead of the server above threshhold
       ) {
-        AdjustBaseTick(clientServerDiff);
+        baseTickAdjustment = AdjustBaseTick(clientServerDiff);
+      }
+      else {
+        _lastTickAdjustmentRequest = 0;
+      }
+      ConsiderOffsetAdjustment(baseTickAdjustment);
+    }
+
+    private void ConsiderOffsetAdjustment(int baseAdjustment) {
+      float average = GetFilteredAverage(GetTickOffsetCompareSequence());
+      int clientServerDiff = Mathf.RoundToInt(average);
+      if (clientServerDiff < ClientBaseTickForwardThreshhold) {
+        _networkTickOffset += -clientServerDiff + -baseAdjustment;
+        Debug.Log("##############################");
+        SetTickOffsetHistory(0);
         return;
       }
 
-      _lastTickAdjustmentRequest = 0;
+      if (clientServerDiff > ClientBaseTickBehindThreshhold) {
+        _networkTickOffset -= clientServerDiff + baseAdjustment;
+        Debug.Log("##############################");
+        SetTickOffsetHistory(0);
+        return;
+      }
+//_networkTickOffset = NonNegativeValue(_networkTickOffset - adjustment * 2); //Adjust the offset as well - usually this will be caused by change in latency
+      
     }
 
-
-    private void AdjustBaseTick(int adjustment) {
+    private int AdjustBaseTick(int adjustment) {
       if (_lastTickAdjustmentRequest != adjustment) {
         _lastTickAdjustmentRequest = adjustment;
-        return;
+        return 0;
       }
 
       /* We want to be at the same tick as the server or 1 tick ahead of the server */
       _networkTickBase += (uint) adjustment;                                      //Adjust the base tick by the amout changed due to latency
-      _networkTickOffset = NonNegativeValue(_networkTickOffset - adjustment * 2); //Adjust the offset as well - usually this will be caused by change in latency
 
       ResetBuffers();
-      SetTickOffsetHistory(_networkTickOffset);
       AdjustClientPhysicsTick(adjustment);
       Debug.Log($"Adjusted Client Base Tick By {adjustment}");
+      return adjustment;
     }
 
     private void ResetBuffers() {
