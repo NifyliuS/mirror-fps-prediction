@@ -65,7 +65,7 @@ namespace NetworkScripts {
     private int    _serverTickHBCount       = 0;
     private int[]  _serverTickOffsetHistory = new int[256];
     private int    _serverTickOffsetCount   = 0;
-    private bool   _isTickSyncQueued        = false;
+    // private bool   _isTickSyncQueued        = false;
     private double _lastTickStart; //Used to calculate time from tick start
 
   #region Initial Sync/Spawn
@@ -88,7 +88,6 @@ namespace NetworkScripts {
     }
 
   #endregion
-
 
   #region Tick Ping Handling
 
@@ -239,7 +238,6 @@ namespace NetworkScripts {
 
   #endregion
 
-
   #region Physics Change Handling
 
     // Queue physics adjustment
@@ -289,7 +287,6 @@ namespace NetworkScripts {
     }
 
   #endregion
-
 
   #region Helper Functions
 

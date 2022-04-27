@@ -43,7 +43,7 @@ namespace NetworkScripts {
 
     private IEnumerator ResolveIdentity(uint newNetId) {
       while (syncVirtualParent && !_parentIdentity && netId != 0) {
-        if (NetworkClient.spawned.TryGetValue(newNetId, out _parentIdentity)) ;
+        if (NetworkClient.spawned.TryGetValue(newNetId, out _parentIdentity));
         _originalScale = targetComponent.localScale;
         if (_parentIdentity) _isParentActive = true;
         yield return null;

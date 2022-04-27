@@ -11,8 +11,6 @@ namespace NetworkScripts {
 
     /* Initial variables */
     private static bool _isReady       = false; // Ticks are in sync
-    private static bool _isInitialized = false; // Ticks are initialized
-
     private static int _currentNetworkTick            = 0; // Server tick
     private static int _currentNetworkTickOffset      = 0; // 1/2 Rtt converted to Ticks
     private static int _currentNetworkTickLocalOffset = 0; // Difference between Client ticks and Network ticks ( used in case client is lagging for some reason

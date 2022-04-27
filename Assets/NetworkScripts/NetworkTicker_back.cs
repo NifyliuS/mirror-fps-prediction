@@ -41,7 +41,7 @@ namespace NetworkScripts {
     public byte ServerTickAdjustmentForwardThreshhold = 1; //TODO: add compensation over time - if client is ahead by 1 over 30s adjust ignoring the threshold
 
     private const            uint          InitialTickOffset = 5; //Initial guesstimate for client Tick offset from server ( server to client )
-    [SerializeField] private TickPingState _tickPingState    = TickPingState.Initial;
+    // [SerializeField] private TickPingState _tickPingState    = TickPingState.Initial;
 
     private static NetworkTick _networkTickInstance;
     private        uint        _networkTickBase   = 0;
