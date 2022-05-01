@@ -42,6 +42,9 @@ namespace NetworkScripts{
     [Header("Tick Sync Frequencty")] [Tooltip("How often server sends his current tick to clients: Every X ticks")]
     public short ServerTickHeartBeatFrequency = 300;
 
+    [Tooltip("We want to send a burst of heart beats to average on the client - more = more accuracy")]
+    public byte ServerTickHeartBeatSequenceSize = 5;
+
     [Tooltip("How often server sends his current tick to clients: Every X ticks")]
     public byte ServerTickOffsetSyncFrequency = 30;
 
