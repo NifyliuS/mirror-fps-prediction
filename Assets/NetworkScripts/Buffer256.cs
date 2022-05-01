@@ -3,6 +3,7 @@
     private T[] _buffer = new T[256];
     private int _bufferCount = 0;
 
+    public int Count  => _bufferCount;
     public void Add(T item) {
       _buffer[(byte)_bufferCount] = item;
       _bufferCount++;
@@ -12,6 +13,7 @@
       return _buffer[(byte)index];
     }
 
+    
     public T GetLast() {
       return _buffer[(byte)(_bufferCount - 1)];
     }

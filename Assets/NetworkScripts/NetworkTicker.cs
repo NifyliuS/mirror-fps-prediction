@@ -152,12 +152,14 @@ namespace NetworkScripts{
         _networkTickOffset = serverTickOffset + tickFraction / 100;
       }
 
-      if (AutoAdjustLimits) LimitAutoAdjustment();
-      TickAdjustmentCheck();
+      if (_syncBuffer.Count >= ServerTickAdjustmentSize) {
+        if (AutoAdjustLimits) LimitAutoAdjustment();
+        TickAdjustmentCheck();  
+      }
+      
 
       _lastSyncTick = serverTick;
-      Debug.Log(
-        $"[{serverTickOffset + tickFraction / 100f}] / [{(short)(_networkTickBase - serverTick) + localTickFraction / 100f}]");
+      // Debug.Log($"[{serverTickOffset + tickFraction / 100f}] / [{(short)(_networkTickBase - serverTick) + localTickFraction / 100f}]");
     }
 
     #endregion
@@ -171,13 +173,17 @@ namespace NetworkScripts{
           _syncBuffer.GetTail(ServerTickAdjustmentSize * 2), 
           x => (float)x.ServerTickOffset + x.ServerTickFraction/100f)
       );
-      Debug.Log($"[{max}] - [{min}] = {Mathf.CeilToInt(max - min)}");
       MaxClientAhead = Mathf.CeilToInt(max - min);
     }
 
     private void TickAdjustmentCheck() {
+      var lastSyncResult = _syncBuffer.GetLast();
       
-      
+      if (lastSyncResult.ServerTick + lastSyncResult.ServerTickOffset == _networkTickBase + 1) {
+        _syncBuffer.Add(lastSyncResult); //Make this result stronger
+      }
+
+      Debug.Log($"[{lastSyncResult.ServerTick}] [{lastSyncResult.ServerTickOffset}] [{_networkTickBase}]");
     }
 
     #endregion
