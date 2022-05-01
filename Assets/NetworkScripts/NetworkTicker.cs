@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using Mirror;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
@@ -57,10 +58,10 @@ namespace NetworkScripts{
     public bool AutoAdjustLimits = false;
 
     [Tooltip("Max allowed ticks client will be ahead when packets arrive on the server")]
-    public short MaxClientAhead = 2; //Max allowed ticks ahead
+    public int MaxClientAhead = 2; //Max allowed ticks ahead
 
     [Tooltip("Max allowed ticks client will be ahead when packets arrive on the server")]
-    public short MinClientAhead = 0; //Max allowed ticks behind
+    public int MinClientAhead = 0; //Max allowed ticks behind
 
 
     private uint _networkTickBase = 0; //Client wont execute server commands marked with tick lower than this value
@@ -118,17 +119,6 @@ namespace NetworkScripts{
     private void RpcServerTickHeartBeat(uint serverTick) {
       if (_lastHeartBeatTick >= serverTick) return; //Avoid duplicates or late data
       _lastHeartBeatTick = serverTick;
-      return;
-      byte fraction = GetTickFraction(); // Get tick fraction as soon as possible
-      _heartBeatBuffer.Add(new HeartBeat() {
-        ClientTickFraction = fraction,
-        ServerTick = serverTick,
-        TickOffset = (short)(serverTick - _networkTickBase),
-      });
-      if (_state == TickSyncerStateEnum.Initializing) {
-        _state = TickSyncerStateEnum.Syncing;
-        _networkTickBase = serverTick;
-      }
     }
 
 
@@ -142,9 +132,6 @@ namespace NetworkScripts{
         fraction
       ); //Return server-client tick difference ( positive = client is ahead )
     }
-
-
-    private Buffer256<int> _test = new Buffer256<int>();
 
     [TargetRpc(channel = Channels.Unreliable)]
     private void RpcTickPong(NetworkConnection _, uint serverTick, sbyte serverTickOffset, byte tickFraction) {
@@ -165,9 +152,8 @@ namespace NetworkScripts{
         _networkTickOffset = serverTickOffset + tickFraction / 100;
       }
 
-
-      if (AutoAdjustLimits) {
-      }
+      if (AutoAdjustLimits) LimitAutoAdjustment();
+      TickAdjustmentCheck();
 
       _lastSyncTick = serverTick;
       Debug.Log(
@@ -178,13 +164,20 @@ namespace NetworkScripts{
 
     #region Tick Adjustments
 
-    private void LimitAdjustment() {
+     
+    private void LimitAutoAdjustment() {
+      (var min, var max) = GetMinMaxF(
+        Array.ConvertAll(
+          _syncBuffer.GetTail(ServerTickAdjustmentSize * 2), 
+          x => (float)x.ServerTickOffset + x.ServerTickFraction/100f)
+      );
+      Debug.Log($"[{max}] - [{min}] = {Mathf.CeilToInt(max - min)}");
+      MaxClientAhead = Mathf.CeilToInt(max - min);
     }
 
-    private void ConsiderBaseTickAdjustment() {
-    }
-
-    private void ConsiderOffsetAdjustment(int baseAdjustment) {
+    private void TickAdjustmentCheck() {
+      
+      
     }
 
     #endregion
@@ -339,6 +332,19 @@ namespace NetworkScripts{
       }
 
       return (maxIndex, minIndex);
+    }
+
+
+    private static (float, float) GetMinMaxF(float[] array) {
+      if (array.Length == 0) return (-1, -1);
+      float max = array[0];
+      float min = array[0];
+      for (int i = 0; i < array.Length; i++) {
+        if (max < array[i]) max = array[i];
+        if (min > array[i]) min = array[i];
+      }
+
+      return (min, max);
     }
 
     /* Average out ping numbers - exclude highest and lowest ping numbers ( ignores short spikes ) */
