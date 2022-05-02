@@ -784,10 +784,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   syncMode: 0
   syncInterval: 0.1
-  ServerTickHeartBeatFrequency: 30
-  ServerTickAdjustmentBehindThreshhold: 0
-  ServerTickAdjustmentForwardThreshhold: 1
-  _tickPingState: 1
+  ServerTickHeartBeatFrequency: 300
+  ServerTickHeartBeatSequenceSize: 5
+  ServerTickOffsetSyncFrequency: 30
+  ServerTickAdjustmentSize: 7
+  AutoAdjustLimits: 0
+  MaxClientAhead: 2
+  MinClientAhead: 0
 --- !u!4 &769418828
 Transform:
   m_ObjectHideFlags: 0
@@ -1525,7 +1528,7 @@ MonoBehaviour:
   NoDelay: 1
   Interval: 10
   Timeout: 10000
-  FastResend: 2
+  FastResend: 1
   CongestionWindow: 0
   SendWindowSize: 4096
   ReceiveWindowSize: 4096
@@ -1556,7 +1559,7 @@ MonoBehaviour:
   offlineScene: 
   onlineScene: 
   transport: {fileID: 1547002179}
-  networkAddress: localhost
+  networkAddress: 127.0.0.1
   maxConnections: 100
   authenticator: {fileID: 0}
   playerPrefab: {fileID: 993027349265489023, guid: 68bbdaf85dca9684e94bd2da234b3f16, type: 3}

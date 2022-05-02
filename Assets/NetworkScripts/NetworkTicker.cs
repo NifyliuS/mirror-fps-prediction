@@ -30,7 +30,8 @@ namespace NetworkScripts{
     }
 
     private Buffer256<HeartBeat> _heartBeatBuffer = new Buffer256<HeartBeat>();
-    private Buffer256<HeartBeat> _syncBeatBuffer = new Buffer256<HeartBeat>();
+
+    private Buffer256<uint> _syncRequestBuffer = new Buffer256<uint>();
     private Buffer256<SyncResponse> _syncBuffer = new Buffer256<SyncResponse>();
 
     private TickSyncerStateEnum
@@ -98,9 +99,8 @@ namespace NetworkScripts{
     public override void OnDeserialize(NetworkReader reader, bool initialState) {
       base.OnDeserialize(reader, initialState);
       if (initialState) {
-        _networkTickBase =
-          reader.ReadUInt() +
-          1; //Adding one due to the way server handles sending ticks ( in most cases the client will be behind more than it should be otherwise )
+        _networkTickBase = reader.ReadUInt();
+        //Adding one due to the way server handles sending ticks ( in most cases the client will be behind more than it should be otherwise )
       }
     }
 
@@ -123,42 +123,46 @@ namespace NetworkScripts{
 
 
     [Command(channel = Channels.Unreliable, requiresAuthority = false)]
-    private void CmdPingTick(uint clientTick, NetworkConnectionToClient sender = null) {
+    private void CmdPingTick(byte clientTickId, NetworkConnectionToClient sender = null) {
       byte fraction = GetTickFraction(); // Get tick fraction as soon as possible
-      RpcTickPong(
-        sender,
-        _networkTickBase,
-        (sbyte)(clientTick - _networkTickBase),
-        fraction
-      ); //Return server-client tick difference ( positive = client is ahead )
+      RpcTickPong(sender, clientTickId, (ushort)(_networkTickBase), fraction, _networkTickBase);
+      //Return server-client tick difference ( positive = client is ahead )
     }
 
     [TargetRpc(channel = Channels.Unreliable)]
-    private void RpcTickPong(NetworkConnection _, uint serverTick, sbyte serverTickOffset, byte tickFraction) {
-      if (_lastSyncTick >= serverTick) return; //Avoid duplicates or late data
+    private void RpcTickPong(NetworkConnection _, byte clientTickId, ushort serverTickUShort, byte tickFraction,
+      uint compare) {
+      uint localTick = _syncRequestBuffer.Get(clientTickId);
+      if (_lastSyncTick >= localTick) return; //Avoid duplicates
       byte localTickFraction = GetTickFraction(); // Get tick fraction as soon as possible
-      _syncBuffer.Add(new SyncResponse() {
-        ServerTick = serverTick,
-        ServerTickOffset = serverTickOffset,
-        ServerTickFraction = tickFraction,
-        LocalTick = _networkTickBase,
-        LocalTickFraction = localTickFraction,
-        LocalTickOffset = (sbyte)(_networkTickBase - serverTick),
-      });
-      // _heartBeatBuffer.Add(new HeartBeat()); // TODO: extract heart beat from client ping
-      if (_state == TickSyncerStateEnum.Syncing) {
-        _state = TickSyncerStateEnum.Ready;
-        _networkTickBase = serverTick;
-        _networkTickOffset = serverTickOffset + tickFraction / 100;
-      }
 
-      if (_syncBuffer.Count >= ServerTickAdjustmentSize) {
-        if (AutoAdjustLimits) LimitAutoAdjustment();
-        TickAdjustmentCheck();  
-      }
+      float serverOffset = GetFixedDiff(serverTickUShort, (ushort)(_networkTickBase)) + tickFraction / 100f;
+      float serverTick = _networkTickBase + serverOffset;
+      float localOffset = _networkTickBase - localTick + localTickFraction / 100f;
+      float heartBeatOffset = localOffset - serverOffset;
+      float desiredOffset = serverOffset + _networkTickOffset;
+      Debug.Log(
+        $"    <color=green>{_networkTickBase} / {compare} / {serverTick}</color>\n" +
+        $"                        localTick=[{_networkTickBase}], localOffset=[{localOffset}]");
       
+      Debug.Log(
+        $"   serverTick=[{serverTick}], serverOffset=[{serverOffset}]\n" +
+        $"                        heartBeatOffset=[{heartBeatOffset}]");
 
-      _lastSyncTick = serverTick;
+      Debug.Log(
+        $"   desiredOffset=[{desiredOffset}]\n" +
+        $"                        l");
+      if (heartBeatOffset < 0) {
+         _networkTickBase++;
+         _networkTickOffset--;
+       }
+
+      if (heartBeatOffset > 5) {
+         _networkTickBase--;
+         _networkTickOffset++;
+       }
+      
+      _lastSyncTick = localTick;
       // Debug.Log($"[{serverTickOffset + tickFraction / 100f}] / [{(short)(_networkTickBase - serverTick) + localTickFraction / 100f}]");
     }
 
@@ -166,19 +170,18 @@ namespace NetworkScripts{
 
     #region Tick Adjustments
 
-     
     private void LimitAutoAdjustment() {
       (var min, var max) = GetMinMaxF(
         Array.ConvertAll(
-          _syncBuffer.GetTail(ServerTickAdjustmentSize * 2), 
-          x => (float)x.ServerTickOffset + x.ServerTickFraction/100f)
+          _syncBuffer.GetTail(ServerTickAdjustmentSize * 2),
+          x => (float)x.ServerTickOffset + x.ServerTickFraction / 100f)
       );
       MaxClientAhead = Mathf.CeilToInt(max - min);
     }
 
     private void TickAdjustmentCheck() {
       var lastSyncResult = _syncBuffer.GetLast();
-      
+
       if (lastSyncResult.ServerTick + lastSyncResult.ServerTickOffset == _networkTickBase + 1) {
         _syncBuffer.Add(lastSyncResult); //Make this result stronger
       }
@@ -198,7 +201,9 @@ namespace NetworkScripts{
     [Client]
     public virtual void ClientFixedUpdate(double deltaTime) {
       if (_networkTickBase % ServerTickOffsetSyncFrequency == 0) {
-        CmdPingTick(_networkTickBase);
+        CmdPingTick(
+          (byte)_syncRequestBuffer.Add(_networkTickBase)
+        );
       }
     }
 
@@ -367,6 +372,13 @@ namespace NetworkScripts{
       }
 
       return sum / sumCounter;
+    }
+
+    private int GetFixedDiff(ushort one, ushort two) {
+      int diff = one - two;
+      if (diff > 32767) return diff - 65536;
+      if (diff < -32767) return diff + 65536;
+      return diff;
     }
 
     #endregion

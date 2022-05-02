@@ -4,9 +4,9 @@
     private int _bufferCount = 0;
 
     public int Count  => _bufferCount;
-    public void Add(T item) {
+    public int Add(T item) {
       _buffer[(byte)_bufferCount] = item;
-      _bufferCount++;
+      return _bufferCount++;
     }
 
     public T Get(int index) {
