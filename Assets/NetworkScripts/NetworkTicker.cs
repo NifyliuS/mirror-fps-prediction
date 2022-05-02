@@ -136,32 +136,29 @@ namespace NetworkScripts{
       if (_lastSyncTick >= localTick) return; //Avoid duplicates
       byte localTickFraction = GetTickFraction(); // Get tick fraction as soon as possible
 
-      float serverOffset = GetFixedDiff(serverTickUShort, (ushort)(_networkTickBase)) + tickFraction / 100f;
-      float serverTick = _networkTickBase + serverOffset;
+      float serverOffset = GetFixedDiff(serverTickUShort, (ushort)(localTick)) + tickFraction / 100f;
+      float serverTick = localTick + serverOffset;
       float localOffset = _networkTickBase - localTick + localTickFraction / 100f;
       float heartBeatOffset = localOffset - serverOffset;
-      float desiredOffset = serverOffset + _networkTickOffset;
       Debug.Log(
         $"    <color=green>{_networkTickBase} / {compare} / {serverTick}</color>\n" +
         $"                        localTick=[{_networkTickBase}], localOffset=[{localOffset}]");
-      
+
       Debug.Log(
         $"   serverTick=[{serverTick}], serverOffset=[{serverOffset}]\n" +
         $"                        heartBeatOffset=[{heartBeatOffset}]");
 
-      Debug.Log(
-        $"   desiredOffset=[{desiredOffset}]\n" +
-        $"                        l");
-      if (heartBeatOffset < 0) {
-         _networkTickBase++;
-         _networkTickOffset--;
-       }
 
-      if (heartBeatOffset > 5) {
+      if (heartBeatOffset < 0) {
+        _networkTickBase++;
+        _networkTickOffset--;
+      }
+      
+      if (heartBeatOffset > 2) {
          _networkTickBase--;
          _networkTickOffset++;
        }
-      
+
       _lastSyncTick = localTick;
       // Debug.Log($"[{serverTickOffset + tickFraction / 100f}] / [{(short)(_networkTickBase - serverTick) + localTickFraction / 100f}]");
     }
