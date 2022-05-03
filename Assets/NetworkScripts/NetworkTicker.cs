@@ -114,10 +114,11 @@ namespace NetworkScripts{
       if (_lastSyncTick >= localTick) return; //Avoid duplicates
       byte localTickFraction = GetTickFraction(); // Get tick fraction as soon as possible
 
+      double currentTick = _networkTickBase + localTickFraction / 100f;
       double serverOffset = GetFixedDiff(serverTickUShort, (ushort)(localTick)) + tickFraction / 100f;
       double serverTick = localTick + serverOffset;
       double localOffset = _networkTickBase - localTick + localTickFraction / 100f;
-      double heartBeatOffset = localOffset - serverOffset;
+      double heartBeatOffset = serverOffset - localOffset;
 
       _syncBuffer.Add(new SyncResponse() {
         ServerTick = serverTick,
@@ -127,19 +128,19 @@ namespace NetworkScripts{
         HeartBeatOffset = heartBeatOffset,
       });
       Debug.Log(
-        $"    <color=green>{_networkTickBase + localOffset} -> {localTick} {serverTick}</color>\n" +
+        $"    <color=green>{currentTick} -> {localTick} {serverTick}</color>\n" +
         $"                        localTick=[{_networkTickBase}], localOffset=[{localOffset}]");
 
       Debug.Log(
         $"   serverTick=[{serverTick}], serverOffset=[{serverOffset}]\n" +
-        $"                        heartBeatOffset=[{heartBeatOffset}] / [{ serverOffset - localOffset}]");
+        $"                        heartBeatOffset=[{heartBeatOffset}] / [{serverOffset - localOffset}]");
 
       if (AutoAdjustLimits && _syncBuffer.Count > ServerTickAdjustmentSize * 2) {
         LimitAutoAdjustment();
       }
 
       if (heartBeatOffset < 1) {
-        // _networkTickBase--;
+        _networkTickBase--;
       }
 
       _lastSyncTick = localTick;
