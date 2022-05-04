@@ -1,4 +1,6 @@
-﻿namespace NetworkScripts{
+﻿using System;
+
+namespace NetworkScripts{
   public class Buffer256<T>{
     private T[] _buffer = new T[256];
     private int _bufferCount = 0;
@@ -13,6 +15,12 @@
       return _buffer[(byte)index];
     }
 
+    public void EditTail(int size, Func<T, T> editFunction) {
+      int offset = _bufferCount - size;
+      for (int i = 0; i < size; i++) {
+        _buffer[(byte)(i + offset)] = editFunction(_buffer[(byte)(i + offset)]);
+      }
+    }
     
     public T GetLast() {
       return _buffer[(byte)(_bufferCount - 1)];

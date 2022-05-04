@@ -136,11 +136,14 @@ namespace NetworkScripts{
         $"                        heartBeatOffset=[{heartBeatOffset}] / [{serverOffset - localOffset}]");
 
       if (AutoAdjustLimits && _syncBuffer.Count > ServerTickAdjustmentSize * 2) {
-        LimitAutoAdjustment();
+        AutoAdjustLimit();
       }
 
-      if (heartBeatOffset < 1) {
-        _networkTickBase--;
+      int tickAdjustmentValue = 0;
+      if (_syncBuffer.Count > ServerTickAdjustmentSize) {
+        var syncSequence = _syncBuffer.GetTail(ServerTickAdjustmentSize);
+        tickAdjustmentValue += CheckAdjustBaseTick(syncSequence);
+        tickAdjustmentValue += CheckAdjustOffsetTick(syncSequence);
       }
 
       _lastSyncTick = localTick;
@@ -150,7 +153,50 @@ namespace NetworkScripts{
 
     #region Tick Adjustments
 
-    private void LimitAutoAdjustment() {
+    private int CheckAdjustBaseTick(SyncResponse[] syncSequence) {
+      int adjustment = 0;
+      double averageHeartBeat = GetFilteredAverage(Array.ConvertAll(syncSequence, x => (double)x.HeartBeatOffset));
+
+      if (averageHeartBeat < MinClientAhead) {
+        adjustment -= 1;
+        _networkTickBase--;
+      }
+
+      if (averageHeartBeat > MaxClientAhead) {
+        adjustment += 1;
+        _networkTickBase++;
+      }
+
+      if (adjustment != 0) {
+        _syncBuffer.EditTail(ServerTickAdjustmentSize * 2, item => {
+          item.HeartBeatOffset -= adjustment;
+          return item;
+        });
+      }
+
+      return adjustment;
+    }
+
+    private int CheckAdjustOffsetTick(SyncResponse[] syncSequence) {
+      int adjustment = 0;
+      double averageOffset = GetFilteredAverage(Array.ConvertAll(syncSequence, x => (double)x.ServerTickOffset));
+      double offsetDiff = averageOffset - _networkTickOffset;
+      
+      if (offsetDiff < MinClientAhead) {
+        adjustment -= 1;
+        _networkTickOffset--;
+      }
+
+      if (offsetDiff > MaxClientAhead) {
+        adjustment += 1;
+        _networkTickOffset++;
+      }
+
+      Debug.Log($"_networkTickOffset={_networkTickOffset} offsetDiff={offsetDiff} averageOffset={averageOffset}");
+      return adjustment;
+    }
+
+    private void AutoAdjustLimit() {
       (var min, var max) = GetMinMaxD(
         Array.ConvertAll(
           _syncBuffer.GetTail(ServerTickAdjustmentSize * 2),
@@ -275,12 +321,12 @@ namespace NetworkScripts{
       return (byte)(tickFraction);
     }
 
-    private static (int, int) GetMAxMinIndex(int[] array) {
+    private static (int, int) GetMAxMinIndex(double[] array) {
       if (array.Length == 0) return (-1, -1);
       int minIndex = 0;
       int maxIndex = 0;
-      int max = array[0];
-      int min = array[0];
+      double max = array[0];
+      double min = array[0];
 
       for (int i = 0; i < array.Length; i++) {
         if (max < array[i]) {
@@ -311,10 +357,10 @@ namespace NetworkScripts{
     }
 
     /* Average out ping numbers - exclude highest and lowest ping numbers ( ignores short spikes ) */
-    private float GetFilteredAverage(int[] array) {
+    private double GetFilteredAverage(double[] array) {
       (int maxIndex, int minIndex) = GetMAxMinIndex(array);
-      int sumCounter = 0;
-      float sum = 0;
+      double sumCounter = 0;
+      double sum = 0;
 
       for (int i = 0; i < array.Length; i++) {
         if (i != maxIndex && i != minIndex) {
