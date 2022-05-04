@@ -155,7 +155,7 @@ namespace NetworkScripts{
 
     private int CheckAdjustBaseTick(SyncResponse[] syncSequence) {
       int adjustment = 0;
-      double averageHeartBeat = GetFilteredAverage(Array.ConvertAll(syncSequence, x => (double)x.HeartBeatOffset));
+      float averageHeartBeat = GetFilteredAverage(Array.ConvertAll(syncSequence, x => (float)x.HeartBeatOffset));
 
       if (averageHeartBeat < MinClientAhead) {
         adjustment -= 1;
@@ -179,20 +179,16 @@ namespace NetworkScripts{
 
     private int CheckAdjustOffsetTick(SyncResponse[] syncSequence) {
       int adjustment = 0;
-      double averageOffset = GetFilteredAverage(Array.ConvertAll(syncSequence, x => (double)x.ServerTickOffset));
-      double offsetDiff = averageOffset - _networkTickOffset;
+      float averageOffset = GetFilteredAverage(Array.ConvertAll(syncSequence, x => (float)x.ServerTickOffset));
+      float offsetDiff = averageOffset - _networkTickOffset;
 
-      if (offsetDiff < MinClientAhead) {
-        adjustment -= 1;
-        _networkTickOffset--;
+      if (offsetDiff > MaxClientAhead || offsetDiff < MinClientAhead) {
+        adjustment = Mathf.CeilToInt(offsetDiff);
+        _networkTickOffset += adjustment;
       }
 
-      if (offsetDiff > MaxClientAhead) {
-        adjustment += 1;
-        _networkTickOffset++;
-      }
-
-      Debug.Log($"_networkTickOffset={_networkTickOffset} offsetDiff={offsetDiff} averageOffset={averageOffset}");
+      Debug.Log(
+        $"_networkTickOffset={_networkTickOffset} offsetDiff={offsetDiff} averageOffset={averageOffset} adjustment={adjustment}");
       return adjustment;
     }
 
@@ -321,12 +317,12 @@ namespace NetworkScripts{
       return (byte)(tickFraction);
     }
 
-    private static (int, int) GetMAxMinIndex(double[] array) {
+    private static (int, int) GetMAxMinIndex(float[] array) {
       if (array.Length == 0) return (-1, -1);
       int minIndex = 0;
       int maxIndex = 0;
-      double max = array[0];
-      double min = array[0];
+      float max = array[0];
+      float min = array[0];
 
       for (int i = 0; i < array.Length; i++) {
         if (max < array[i]) {
@@ -357,10 +353,10 @@ namespace NetworkScripts{
     }
 
     /* Average out ping numbers - exclude highest and lowest ping numbers ( ignores short spikes ) */
-    private double GetFilteredAverage(double[] array) {
+    private float GetFilteredAverage(float[] array) {
       (int maxIndex, int minIndex) = GetMAxMinIndex(array);
-      double sumCounter = 0;
-      double sum = 0;
+      float sumCounter = 0;
+      float sum = 0;
 
       for (int i = 0; i < array.Length; i++) {
         if (i != maxIndex && i != minIndex) {
