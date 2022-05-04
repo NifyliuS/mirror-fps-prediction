@@ -181,7 +181,7 @@ namespace NetworkScripts{
       int adjustment = 0;
       double averageOffset = GetFilteredAverage(Array.ConvertAll(syncSequence, x => (double)x.ServerTickOffset));
       double offsetDiff = averageOffset - _networkTickOffset;
-      
+
       if (offsetDiff < MinClientAhead) {
         adjustment -= 1;
         _networkTickOffset--;
