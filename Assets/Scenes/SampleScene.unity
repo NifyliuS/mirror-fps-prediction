@@ -784,13 +784,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   syncMode: 0
   syncInterval: 0.1
-  ServerTickHeartBeatFrequency: 300
-  ServerTickHeartBeatSequenceSize: 5
   ServerTickOffsetSyncFrequency: 30
-  ServerTickAdjustmentSize: 7
   AutoAdjustLimits: 0
-  MaxClientAhead: 2
-  MinClientAhead: 0
+  MaxClientAhead: 8
+  MinClientAhead: 5
 --- !u!4 &769418828
 Transform:
   m_ObjectHideFlags: 0
