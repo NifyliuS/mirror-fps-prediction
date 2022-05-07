@@ -23,7 +23,6 @@ namespace NetworkScripts{
     private struct SyncResponse{
       public double ServerTick;
       public double ServerTickOffset;
-      public double ServerDeliveryOffset;
       public double LocalTick;
       public double LocalTickOffset;
       public double HeartBeatOffset;
@@ -45,7 +44,7 @@ namespace NetworkScripts{
     [Tooltip("Amount of ticks to Average out to smooth network inconsistencies ( 2 might be removed as Spikes )")]
     public static int ServerTickAdjustmentSize = 10;
 
-    public static int AccuracySampleSize = 30;
+    public static int AccuracySampleSize = 20;
 
     [Header("Base Tick Accuracy Settings")]
     [Tooltip("Allow automatic adjustment based on accuracy (will add or reduce to MaxClientAhead)")]
@@ -118,30 +117,32 @@ namespace NetworkScripts{
       if (_lastSyncTick >= localTick) return; //Avoid duplicates
       byte localTickFraction = GetTickFraction(); // Get tick fraction as soon as possible
 
-      double currentTick = _networkTickBase + localTickFraction / 100f;
+      double localOffset = _networkTickBase - localTick + localTickFraction / 100f;
+
       double serverOffset = GetFixedDiff(serverTickUShort, (ushort)(localTick)) + tickFraction / 100f;
       double serverTick = localTick + serverOffset;
-      double localOffset = _networkTickBase - localTick + localTickFraction / 100f;
       double heartBeatOffset = serverOffset - localOffset;
-      double serverDeliveryOffset = serverOffset - heartBeatOffset;
+
       var syncItem = new SyncResponse() {
         ServerTick = serverTick,
         ServerTickOffset = serverOffset,
         LocalTick = localTick,
         LocalTickOffset = localOffset,
         HeartBeatOffset = heartBeatOffset,
-        ServerDeliveryOffset = serverDeliveryOffset,
       };
       _syncBuffer.Add(syncItem);
+
+
       Debug.Log(
-        $"    <color=green>{currentTick} -> {localTick} {serverTick}</color>\n" +
-        $"                        localTick=[{_networkTickBase}]");
-      Debug.Log($"    localOffset=[{localOffset}]\n" +
-                $"                        serverTick=[{serverTick}]");
-      Debug.Log($"    serverOffset=[{serverOffset}]\n" +
-                $"                        heartBeatOffset=[{heartBeatOffset}]");
-      Debug.Log($"    serverDeliveryOffset=[{serverDeliveryOffset}]\n" +
-                $"                        .");
+        $"    <color=green>currentTick={_networkTickBase + localTickFraction / 100f}</color>\n" +
+        $"                        heartBeatOffset=[{heartBeatOffset}]");
+      Debug.Log(
+        $"    serverTick=[{serverTick}]\n" +
+        $"                        serverOffset=[{serverOffset}]");
+      Debug.Log(
+        $"    localTick=[{localTick}]\n" +
+        $"                        localOffset=[{localOffset}] / {localOffset * 20}ms");
+
 
       if (_state == TickSyncerStateEnum.Initializing) {
         _state = TickSyncerStateEnum.Ready;
@@ -154,9 +155,7 @@ namespace NetworkScripts{
       if (AutoAdjustBaseLimits) AdjustBaseLimits();
       if (AutoAdjustPredictionLimits && _syncBuffer.Count > ServerTickAdjustmentSize) AdjustPredictionLimits();
 
-
       CheckAdjustBaseTickV2(syncItem);
-
 
       _lastSyncTick = localTick;
     }
@@ -168,12 +167,13 @@ namespace NetworkScripts{
     private void AdjustBaseLimits() {
       (var min, var max) = GetMinMaxD(
         Array.ConvertAll(
-          _syncBuffer.GetTail(ServerTickAdjustmentSize),
-          x => (double)x.ServerTickOffset)
+          _syncBuffer.GetTail(AccuracySampleSize),
+          x => (double)x.HeartBeatOffset)
       );
-      _baseAccuracyBuf.Add(max - min);
+      float accuracyDiff = (float)(max - min);
+      _baseAccuracyBuf.Add(1 + accuracyDiff);
       BaseAccuracy = (float)(_baseAccuracyBuf.Value);
-      MaxClientBaseAhead = MinClientBaseAhead + Mathf.CeilToInt((float)(_baseAccuracyBuf.Value));
+      MaxClientBaseAhead = MinClientBaseAhead + Mathf.CeilToInt((float)_baseAccuracyBuf.Value);
     }
 
     private void AdjustPredictionLimits() {
@@ -190,11 +190,13 @@ namespace NetworkScripts{
     private int CheckAdjustBaseTickV2(SyncResponse syncItem) {
       if (syncItem.HeartBeatOffset < MinClientBaseAhead) {
         _networkTickBase--;
+        Debug.Log("Adjusted Base Tick -1");
         return -1;
       }
 
       if (syncItem.HeartBeatOffset > MaxClientBaseAhead) {
         _networkTickBase++;
+        Debug.Log("Adjusted Base Tick +1");
         return 1;
       }
 
