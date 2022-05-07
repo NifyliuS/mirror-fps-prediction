@@ -171,7 +171,7 @@ namespace NetworkScripts{
           x => (double)x.HeartBeatOffset)
       );
       float accuracyDiff = (float)(max - min);
-      _baseAccuracyBuf.Add(1 + accuracyDiff);
+      _baseAccuracyBuf.Add(accuracyDiff * 2);
       BaseAccuracy = (float)(_baseAccuracyBuf.Value);
       MaxClientBaseAhead = MinClientBaseAhead + Mathf.CeilToInt((float)_baseAccuracyBuf.Value);
     }
