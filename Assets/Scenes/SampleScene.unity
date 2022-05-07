@@ -785,9 +785,14 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0.1
   ServerTickOffsetSyncFrequency: 30
-  AutoAdjustLimits: 0
-  MaxClientAhead: 8
-  MinClientAhead: 5
+  AutoAdjustBaseLimits: 0
+  MaxClientBaseAhead: 8
+  MinClientBaseAhead: 5
+  <BaseAccuracy>k__BackingField: 0
+  AutoAdjustPredictionLimits: 0
+  MaxClientPredictionAhead: 8
+  MinClientPredictionAhead: 5
+  <PredictionAccuracy>k__BackingField: 0
 --- !u!4 &769418828
 Transform:
   m_ObjectHideFlags: 0
