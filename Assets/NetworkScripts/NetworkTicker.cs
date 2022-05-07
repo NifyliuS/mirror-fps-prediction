@@ -38,7 +38,7 @@ namespace NetworkScripts{
     private int _skipPhysicsSteps = 0; //Used to skip ticks or reverse the physics engine
 
     [Tooltip("How often server sends his current tick to clients: Every X ticks")]
-    public byte ServerTickOffsetSyncFrequency = 30;
+    public byte ServerTickOffsetSyncFrequency = 50;
 
     [Header("Tick Timing Smoothing")]
     [Tooltip("Amount of ticks to Average out to smooth network inconsistencies ( 2 might be removed as Spikes )")]
