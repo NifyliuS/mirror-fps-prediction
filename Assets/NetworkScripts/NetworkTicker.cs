@@ -45,6 +45,7 @@ namespace NetworkScripts{
     public static int ServerTickAdjustmentSize = 10;
 
     public static int AccuracySampleSize = 20;
+    public static float AccuracyBias = 2;
 
     [Header("Base Tick Accuracy Settings")]
     [Tooltip("Allow automatic adjustment based on accuracy (will add or reduce to MaxClientAhead)")]
@@ -152,8 +153,8 @@ namespace NetworkScripts{
 
       if (_syncBuffer.Count < ServerTickAdjustmentSize) return;
 
-      if (AutoAdjustBaseLimits) AdjustBaseLimits();
-      if (AutoAdjustPredictionLimits && _syncBuffer.Count > ServerTickAdjustmentSize) AdjustPredictionLimits();
+      if (AutoAdjustBaseLimits && _syncBuffer.Count < AccuracySampleSize) AdjustBaseLimits();
+      if (AutoAdjustPredictionLimits && _syncBuffer.Count < AccuracySampleSize) AdjustPredictionLimits();
 
       CheckAdjustBaseTickV2(syncItem);
 
@@ -171,7 +172,7 @@ namespace NetworkScripts{
           x => (double)x.HeartBeatOffset)
       );
       float accuracyDiff = (float)(max - min);
-      _baseAccuracyBuf.Add(accuracyDiff * 2);
+      _baseAccuracyBuf.Add(accuracyDiff * AccuracyBias);
       BaseAccuracy = (float)(_baseAccuracyBuf.Value);
       MaxClientBaseAhead = MinClientBaseAhead + Mathf.CeilToInt((float)_baseAccuracyBuf.Value);
     }
@@ -179,10 +180,11 @@ namespace NetworkScripts{
     private void AdjustPredictionLimits() {
       (var min, var max) = GetMinMaxD(
         Array.ConvertAll(
-          _syncBuffer.GetTail(ServerTickAdjustmentSize),
+          _syncBuffer.GetTail(AccuracySampleSize),
           x => (double)x.ServerTickOffset)
       );
-      _predictionAccuracyBuf.Add(max - min);
+      float accuracyDiff = (float)(max - min);
+      _predictionAccuracyBuf.Add(accuracyDiff * AccuracyBias);
       PredictionAccuracy = (float)(_predictionAccuracyBuf.Value);
       MaxClientPredictionAhead = MinClientPredictionAhead + Mathf.CeilToInt((float)(_predictionAccuracyBuf.Value));
     }
@@ -190,12 +192,14 @@ namespace NetworkScripts{
     private int CheckAdjustBaseTickV2(SyncResponse syncItem) {
       if (syncItem.HeartBeatOffset < MinClientBaseAhead) {
         _networkTickBase--;
+        _networkTickPrediction--;
         Debug.Log("Adjusted Base Tick -1");
         return -1;
       }
 
       if (syncItem.HeartBeatOffset > MaxClientBaseAhead) {
         _networkTickBase++;
+        _networkTickPrediction++;
         Debug.Log("Adjusted Base Tick +1");
         return 1;
       }
