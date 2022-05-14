@@ -789,6 +789,7 @@ MonoBehaviour:
   MinClientPredictionAhead: 5
   ServerTickAdjustmentSize: 15
   SendPingCount: 1
+  TickPrecisionAdjustmentMultipiler: 3
 --- !u!4 &769418828
 Transform:
   m_ObjectHideFlags: 0
