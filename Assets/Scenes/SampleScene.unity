@@ -784,15 +784,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   syncMode: 0
   syncInterval: 0.1
-  ServerTickOffsetSyncFrequency: 30
-  AutoAdjustBaseLimits: 1
-  MaxClientBaseAhead: 8
+  ServerTickOffsetSyncFrequency: 25
   MinClientBaseAhead: 5
-  <BaseAccuracy>k__BackingField: 0
-  AutoAdjustPredictionLimits: 0
-  MaxClientPredictionAhead: 8
   MinClientPredictionAhead: 5
-  <PredictionAccuracy>k__BackingField: 0
+  ServerTickAdjustmentSize: 15
+  SendPingCount: 1
 --- !u!4 &769418828
 Transform:
   m_ObjectHideFlags: 0
