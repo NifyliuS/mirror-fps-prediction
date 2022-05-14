@@ -785,7 +785,7 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0.1
   ServerTickOffsetSyncFrequency: 25
-  MinClientBaseAhead: 5
+  MinClientBaseAhead: 0
   MinClientPredictionAhead: 5
   ServerTickAdjustmentSize: 15
   SendPingCount: 1
