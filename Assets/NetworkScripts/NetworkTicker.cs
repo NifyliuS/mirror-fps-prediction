@@ -49,7 +49,7 @@ namespace NetworkScripts{
     [Header("Base Tick Accuracy Settings")] [Tooltip("How many previous ticks to consider when adjusting")]
     public int ServerTickAdjustmentSize = 15;
 
-    [Tooltip("How many pings to send together")]
+    [Tooltip("How many pings to send together - trades traffic for accuracy")]
     public int SendPingCount = 2;
 
 
