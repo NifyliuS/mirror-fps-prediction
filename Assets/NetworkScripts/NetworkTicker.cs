@@ -156,12 +156,14 @@ namespace NetworkScripts{
       }
 
       if (_syncBuffer.Count > ServerTickAdjustmentSize) {
-        double minDiff = GetMinBaseOffset() - MinClientBaseAhead;
+        (double min, double max, double precision) = GetMinBaseOffset();
+        double minDiff = min - MinClientBaseAhead;
         if (minDiff > 2) return AdjustBaseTick(Mathf.CeilToInt((float)minDiff) - 2);
       }
 
       if (_syncBuffer.Count > ServerTickAdjustmentSize * TickPrecisionAdjustmentMultipiler) {
-        double minDiffPrecise = GetMinBaseOffset(TickPrecisionAdjustmentMultipiler) - MinClientBaseAhead;
+        (double min, double max, double precision) = GetMinBaseOffset(TickPrecisionAdjustmentMultipiler);
+        double minDiffPrecise = min - MinClientBaseAhead;
         if (minDiffPrecise > 1) return AdjustBaseTick(Mathf.CeilToInt((float)minDiffPrecise) - 1);
       }
 
@@ -181,12 +183,14 @@ namespace NetworkScripts{
       }
 
       if (_syncBuffer.Count > ServerTickAdjustmentSize) {
-        double minDiff = GetMinPredictionOffset() - MinClientPredictionAhead;
+        (double min, double max, double precision) = GetMinPredictionOffset();
+        double minDiff = min - MinClientPredictionAhead;
         if (minDiff > 2) return AdjustPredictionTick(Mathf.CeilToInt((float)minDiff - 2));
       }
 
       if (_syncBuffer.Count > ServerTickAdjustmentSize * TickPrecisionAdjustmentMultipiler) {
-        double minDiffPrecise = GetMinPredictionOffset(TickPrecisionAdjustmentMultipiler) - MinClientPredictionAhead;
+        (double min, double max, double precision) = GetMinPredictionOffset(TickPrecisionAdjustmentMultipiler);
+        double minDiffPrecise = min - MinClientPredictionAhead;
         if (minDiffPrecise > 1) return AdjustPredictionTick(Mathf.CeilToInt((float)minDiffPrecise - 1));
       }
 
@@ -198,16 +202,10 @@ namespace NetworkScripts{
       Debug.Log($" ================================================ Adjusted Prediction Tick {-adjustment}");
       _networkTickPrediction = (uint)(_networkTickPrediction - adjustment);
       AdjustHistory(0, -adjustment); //Instead of resseting the buffer we can just fix the values
-
-
       return adjustment;
     }
 
     private void AdjustHistory(int baseTickAdjustment, int predictionTickAdjustment) {
-      // Debug.Log($"Adjusted p orig diff {GetMinPredictionOffset() - MinClientPredictionAhead}");
-      // Debug.Log($"Adjusted p orig Precision diff {GetMinPredictionOffset(TickPrecisionAdjustmentMultipiler) - MinClientPredictionAhead}");
-      // Debug.Log($"Adjusted p diff {GetMinPredictionOffset() - MinClientPredictionAhead}");
-      // Debug.Log($"Adjusted p Precision diff {GetMinPredictionOffset(TickPrecisionAdjustmentMultipiler) - MinClientPredictionAhead}");
       _syncBuffer.EditTail(ServerTickAdjustmentSize * TickPrecisionAdjustmentMultipiler, item => {
         return new SyncResponse() {
           PredictionTick = item.PredictionTick,
@@ -221,20 +219,22 @@ namespace NetworkScripts{
       });
     }
 
-    private double GetMinBaseOffset(int multiplier = 1) {
-      return GetMinD(
+    private (double, double, double) GetMinBaseOffset(int multiplier = 1) {
+      (double min, double max) = GetMinMaxD(
         Array.ConvertAll(
           _syncBuffer.GetTail(ServerTickAdjustmentSize * multiplier),
           x => (double)x.HeartBeatOffset)
       );
+      return (min, max, max - min);
     }
 
-    private double GetMinPredictionOffset(int multiplier = 1) {
-      return GetMinD(
+    private (double, double, double) GetMinPredictionOffset(int multiplier = 1) {
+      (double min, double max) = GetMinMaxD(
         Array.ConvertAll(
           _syncBuffer.GetTail(ServerTickAdjustmentSize * multiplier),
           x => (double)x.PredictionTickOffset)
       );
+      return (min, max, max - min);
     }
 
     #endregion
