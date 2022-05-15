@@ -162,8 +162,9 @@ namespace NetworkScripts{
       if (_syncBuffer.Count > ServerTickAdjustmentSize) {
         (double min, double max, double precision) = GetMinBaseOffset();
         double minDiff = min - MinClientBaseAhead;
-        if (minDiff > 2) {
-          Debug.Log($"Adjusted Base minDiff={minDiff} min={min} max={max} precision={precision}");
+        float compareValue = 2 + Mathf.InverseLerp(2, 4, (float)precision) * 2;
+        if (minDiff > compareValue) {
+          Debug.Log($"Adjusted Base minDiff={minDiff} min={min} max={max} precision={precision} compareValue={compareValue}");
           return AdjustBaseTick(Mathf.CeilToInt((float)minDiff) - 2);
         }
       }
@@ -171,8 +172,10 @@ namespace NetworkScripts{
       if (_syncBuffer.Count > ServerTickAdjustmentSize * TickPrecisionAdjustmentMultipiler) {
         (double min, double max, double precision) = GetMinBaseOffset(TickPrecisionAdjustmentMultipiler);
         double minDiffPrecise = min - MinClientBaseAhead;
-        if (minDiffPrecise > 1) {
-          Debug.Log($"Adjusted Base minDiffPrecise={minDiffPrecise} min={min} max={max} precision={precision}");
+        float compareValue = 1 + Mathf.InverseLerp(1, 2, (float)precision);
+        if (minDiffPrecise > compareValue) {
+          Debug.Log(
+            $"Adjusted Base minDiffPrecise={minDiffPrecise} min={min} max={max} precision={precision} compareValue={compareValue}");
           return AdjustBaseTick(Mathf.CeilToInt((float)minDiffPrecise) - 1);
         }
       }
@@ -189,8 +192,9 @@ namespace NetworkScripts{
       if (_syncBuffer.Count > ServerTickAdjustmentSize) {
         (double min, double max, double precision) = GetMinPredictionOffset();
         double minDiff = min - MinClientPredictionAhead;
-        if (minDiff > 2) {
-          Debug.Log($"Adjusted Prediction minDiff={minDiff} min={min} max={max} precision={precision}");
+        float compareValue = 2 + Mathf.InverseLerp(2, 4, (float)precision) * 2; // 2 - 4 depending on tick precision
+        if (minDiff > compareValue) {
+          Debug.Log($"Adjusted Prediction minDiff={minDiff} min={min} max={max} precision={precision} compareValue={compareValue}");
           return AdjustPredictionTick(Mathf.CeilToInt((float)minDiff - 2));
         }
       }
@@ -198,8 +202,9 @@ namespace NetworkScripts{
       if (_syncBuffer.Count > ServerTickAdjustmentSize * TickPrecisionAdjustmentMultipiler) {
         (double min, double max, double precision) = GetMinPredictionOffset(TickPrecisionAdjustmentMultipiler);
         double minDiffPrecise = min - MinClientPredictionAhead;
-        if (minDiffPrecise > 1) {
-          Debug.Log($"Adjusted Prediction minDiffPrecise={minDiffPrecise} min={min} max={max} precision={precision}");
+        float compareValue = 1 + Mathf.InverseLerp(1, 2, (float)precision); // 1 - 2 depending on tick precision
+        if (minDiffPrecise > compareValue) {
+          Debug.Log($"Adjusted Prediction minDiffPrecise={minDiffPrecise} min={min} max={max} precision={precision} compareValue={compareValue}");
           return AdjustPredictionTick(Mathf.CeilToInt((float)minDiffPrecise - 1));
         }
       }
