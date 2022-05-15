@@ -23,6 +23,7 @@ namespace NetworkScripts{
     }
 
     private struct SyncRequest{
+      public int RequestId;
       public uint BaseTick;
       public uint PredictionTick;
     }
@@ -46,18 +47,18 @@ namespace NetworkScripts{
     public int MinClientPredictionAhead = 5;
 
     [Header("Base Tick Accuracy Settings")] [Tooltip("How many previous ticks to consider when adjusting")]
-    public int ServerTickAdjustmentSize = 15;
+    public int ServerTickAdjustmentSize = 10;
 
     [Tooltip("How many pings to send together - trades traffic for accuracy")]
     public int SendPingCount = 2;
 
     [Tooltip("How many previous ticks to consider when fine tuning ServerTickAdjustmentSize x Multiplier")]
-    public int TickPrecisionAdjustmentMultipiler = 2;
+    public int TickPrecisionAdjustmentMultipiler = 3;
 
     private uint _networkTickBase = 0; //Client wont execute server commands marked with tick lower than this value
     private uint _networkTickPrediction = 0;
 
-    private uint _lastSyncTick = 0; //Used to ignore older or duplicate entries from the server syncing
+    private int _lastSyncTick = -1; //Used to ignore older or duplicate entries from the server syncing
     private double _lastTickStart; //Used to calculate time from tick start
 
     #region Initial Sync/Spawn
@@ -76,6 +77,7 @@ namespace NetworkScripts{
       base.OnDeserialize(reader, initialState);
       if (initialState) {
         _networkTickBase = (uint)(reader.ReadUInt() - MinClientBaseAhead - 1);
+        _networkTickPrediction = _networkTickBase;
         //Adding one due to the way server handles sending ticks ( in most cases the client will be behind more than it should be otherwise )
       }
     }
@@ -102,17 +104,17 @@ namespace NetworkScripts{
 
     private void HandleTickPong(byte clientTickId, ushort serverTickUShort, byte tickFraction, byte localTickFraction) {
       SyncRequest request = _syncRequestBuffer.Get(clientTickId);
+      int requestId = request.RequestId;
+      if (_lastSyncTick >= requestId) return; //Avoid duplicates
+      _lastSyncTick = requestId;
+
       uint localTick = request.BaseTick;
       uint predictionTick = request.PredictionTick;
-      if (_lastSyncTick >= localTick) return; //Avoid duplicates
-      _lastSyncTick = localTick;
-
-      double localOffset = _networkTickBase - localTick + localTickFraction / 100f;
-      double predictionTickOffset = GetUshortFixedDiff((ushort)(predictionTick), serverTickUShort) + tickFraction / 100f;
-      double serverOffset = GetUshortFixedDiff((ushort)(localTick), serverTickUShort) + tickFraction / 100f;
-      double serverTick = localTick - serverOffset;
-      double heartBeatOffset = -serverOffset - localOffset;
-
+      double localOffset = _networkTickBase + localTickFraction / 100f - localTick;
+      double serverOffset = GetUshortFixedDiff(serverTickUShort, (ushort)localTick) + tickFraction / 100f;
+      double serverTick = localTick + serverOffset;
+      double predictionTickOffset = predictionTick - serverTick;
+      double heartBeatOffset = serverOffset - localOffset;
 
       var syncItem = new SyncResponse() {
         PredictionTick = predictionTick,
@@ -127,7 +129,9 @@ namespace NetworkScripts{
 
       if (_state == TickSyncerStateEnum.Initializing) {
         _state = TickSyncerStateEnum.Ready;
-        _networkTickPrediction = (uint)(_networkTickBase + NonNegativeValue(Mathf.CeilToInt((float)(MinClientPredictionAhead - serverOffset))));
+        _networkTickPrediction = (uint)(_networkTickBase + NonNegativeValue(
+          Mathf.CeilToInt((float)(MinClientPredictionAhead - predictionTickOffset))
+        ));
         return;
       }
 
@@ -143,7 +147,7 @@ namespace NetworkScripts{
         $"                        PredictionTickOffset=[{predictionTickOffset}]");
       Debug.Log(
         $"    serverTick=[{serverTick}]\n" +
-        $"                        serverOffset=[{serverOffset}]");
+        $"                        serverOffset=[{serverOffset}] / [{tickFraction}]");
       Debug.Log(
         $"    localTick=[{localTick}]\n" +
         $"                        localOffset=[{localOffset}] / {localOffset * 20}ms");
@@ -158,13 +162,46 @@ namespace NetworkScripts{
       if (_syncBuffer.Count > ServerTickAdjustmentSize) {
         (double min, double max, double precision) = GetMinBaseOffset();
         double minDiff = min - MinClientBaseAhead;
-        if (minDiff > 2) return AdjustBaseTick(Mathf.CeilToInt((float)minDiff) - 2);
+        if (minDiff > 2) {
+          Debug.Log($"Adjusted Base minDiff={minDiff} min={min} max={max} precision={precision}");
+          return AdjustBaseTick(Mathf.CeilToInt((float)minDiff) - 2);
+        }
       }
 
       if (_syncBuffer.Count > ServerTickAdjustmentSize * TickPrecisionAdjustmentMultipiler) {
         (double min, double max, double precision) = GetMinBaseOffset(TickPrecisionAdjustmentMultipiler);
         double minDiffPrecise = min - MinClientBaseAhead;
-        if (minDiffPrecise > 1) return AdjustBaseTick(Mathf.CeilToInt((float)minDiffPrecise) - 1);
+        if (minDiffPrecise > 1) {
+          Debug.Log($"Adjusted Base minDiffPrecise={minDiffPrecise} min={min} max={max} precision={precision}");
+          return AdjustBaseTick(Mathf.CeilToInt((float)minDiffPrecise) - 1);
+        }
+      }
+
+      return 0;
+    }
+
+
+    private int CheckAdjustPredictionTick(SyncResponse syncItem) {
+      if (syncItem.PredictionTickOffset < MinClientPredictionAhead) {
+        return AdjustPredictionTick(Mathf.FloorToInt((float)(syncItem.PredictionTickOffset - MinClientPredictionAhead)));
+      }
+
+      if (_syncBuffer.Count > ServerTickAdjustmentSize) {
+        (double min, double max, double precision) = GetMinPredictionOffset();
+        double minDiff = min - MinClientPredictionAhead;
+        if (minDiff > 2) {
+          Debug.Log($"Adjusted Prediction minDiff={minDiff} min={min} max={max} precision={precision}");
+          return AdjustPredictionTick(Mathf.CeilToInt((float)minDiff - 2));
+        }
+      }
+
+      if (_syncBuffer.Count > ServerTickAdjustmentSize * TickPrecisionAdjustmentMultipiler) {
+        (double min, double max, double precision) = GetMinPredictionOffset(TickPrecisionAdjustmentMultipiler);
+        double minDiffPrecise = min - MinClientPredictionAhead;
+        if (minDiffPrecise > 1) {
+          Debug.Log($"Adjusted Prediction minDiffPrecise={minDiffPrecise} min={min} max={max} precision={precision}");
+          return AdjustPredictionTick(Mathf.CeilToInt((float)minDiffPrecise - 1));
+        }
       }
 
       return 0;
@@ -176,27 +213,6 @@ namespace NetworkScripts{
       AdjustHistory(-adjustment, 0); //Instead of resseting the buffer we can just fix the values
       return adjustment;
     }
-
-    private int CheckAdjustPredictionTick(SyncResponse syncItem) {
-      if (syncItem.PredictionTickOffset < MinClientPredictionAhead) {
-        return AdjustPredictionTick(Mathf.FloorToInt((float)(syncItem.PredictionTickOffset - MinClientPredictionAhead)));
-      }
-
-      if (_syncBuffer.Count > ServerTickAdjustmentSize) {
-        (double min, double max, double precision) = GetMinPredictionOffset();
-        double minDiff = min - MinClientPredictionAhead;
-        if (minDiff > 2) return AdjustPredictionTick(Mathf.CeilToInt((float)minDiff - 2));
-      }
-
-      if (_syncBuffer.Count > ServerTickAdjustmentSize * TickPrecisionAdjustmentMultipiler) {
-        (double min, double max, double precision) = GetMinPredictionOffset(TickPrecisionAdjustmentMultipiler);
-        double minDiffPrecise = min - MinClientPredictionAhead;
-        if (minDiffPrecise > 1) return AdjustPredictionTick(Mathf.CeilToInt((float)minDiffPrecise - 1));
-      }
-
-      return 0;
-    }
-
 
     private int AdjustPredictionTick(int adjustment) {
       Debug.Log($" ================================================ Adjusted Prediction Tick {-adjustment}");
@@ -254,6 +270,7 @@ namespace NetworkScripts{
       if (_networkTickBase % ServerTickOffsetSyncFrequency == 0) {
         for (int i = 0; i < SendPingCount; i++) {
           CmdPingTick((byte)_syncRequestBuffer.Add(new SyncRequest() {
+            RequestId = _syncRequestBuffer.Count,
             BaseTick = _networkTickBase,
             PredictionTick = _networkTickPrediction,
           }));
