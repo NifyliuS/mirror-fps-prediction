@@ -41,7 +41,7 @@ namespace NetworkScripts{
     public byte ServerTickOffsetSyncFrequency = 25;
 
     [Tooltip("Tick compensation desired deviation limit")]
-    public int TickDesiredDeviation = 2;
+    public int TickDeviation = 2;
 
     [Tooltip("Max allowed ticks client will be ahead when packets arrive on the server")]
     public int MinClientBaseAhead = 5;
@@ -51,9 +51,6 @@ namespace NetworkScripts{
 
     [Header("Base Tick Accuracy Settings")] [Tooltip("How many previous ticks to consider when adjusting")]
     public int ServerTickAdjustmentSize = 10;
-
-    [Tooltip("How many pings to send together - trades traffic for accuracy")]
-    public int SendPingCount = 2;
 
     private uint _networkTickBase = 0; //Client wont execute server commands marked with tick lower than this value
     private uint _networkTickPrediction = 0;
@@ -131,20 +128,17 @@ namespace NetworkScripts{
         ServerTickOffset = serverOffset,
       };
       _syncBuffer.Add(syncItem);
-      CalculatePrecision();
       if (_state == TickSyncerStateEnum.Initializing) {
         _state = TickSyncerStateEnum.Ready;
-        _networkTickPrediction = (uint)(_networkTickBase + NonNegativeValue(
-          Mathf.CeilToInt((float)(MinClientPredictionAhead - predictionTickOffset))
-        ));
+        _networkTickPrediction = (uint)(_networkTickBase + Mathf.CeilToInt((float)(MinClientPredictionAhead - predictionTickOffset) + 1));
         return;
       }
 
-      int baseTickAdjustment = CheckAdjustBaseTick(syncItem);
-      int predictionTickAdjustment = baseTickAdjustment + CheckAdjustPredictionTick(syncItem);
+      RunAdjustments(syncItem);
+
 
       Debug.Log(
-        $"    <color=green>currentTick={_networkTickBase + localTickFraction / 100f}  ==== [{baseTickAdjustment}]/[{predictionTickAdjustment}]</color>\n" +
+        $"    <color=green>currentTick={_networkTickBase + localTickFraction / 100f} </color>\n" +
         $"                        predictionTick=[{predictionTick}]");
       Debug.Log(
         $"    heartBeatOffset=[{(float)(heartBeatOffset)}] / {(float)_tickPrecision.Value}\n" +
@@ -155,41 +149,41 @@ namespace NetworkScripts{
       Debug.Log(
         $"    localTick=[{localTick}]\n" +
         $"                        localOffset=[{(float)localOffset}] / {(float)localOffset * 20}ms");
+      Debug.Log("==========================================");
     }
 
+    private void RunAdjustments(SyncResponse syncItem) {
+      (double baseMin, double baseMax, double predictMin, double predictMax) = GetMinMaxBasePrecision();
+      _tickPrecision.Add(Math.Max(baseMax - baseMin, predictMax - predictMin));
+      float compareValue = TickDeviation + TickDeviation * Mathf.InverseLerp(TickDeviation, TickDeviation * 2, (float)_tickPrecision.Value);
+      int baseTickAdjustment = CheckAdjustBaseTick(syncItem, baseMin, compareValue);
+      int predictionTickAdjustment = CheckAdjustPredictionTick(syncItem, predictMin, compareValue);
+    }
 
-    private int CheckAdjustBaseTick(SyncResponse syncItem) {
+    private int CheckAdjustBaseTick(SyncResponse syncItem, double minValue, float compareValue) {
       if (syncItem.HeartBeatOffset < MinClientBaseAhead) {
         return AdjustBaseTick(Mathf.FloorToInt((float)(syncItem.HeartBeatOffset - MinClientBaseAhead)));
       }
 
       if (_syncBuffer.Count > ServerTickAdjustmentSize) {
-        double min = GetMinBaseOffset();
-        double minDiff = min - MinClientBaseAhead;
-        float compareValue = TickDesiredDeviation +
-                             Mathf.InverseLerp(TickDesiredDeviation, TickDesiredDeviation * 2, (float)_tickPrecision.Value) * TickDesiredDeviation;
+        double minDiff = minValue - MinClientBaseAhead;
         if (minDiff > compareValue) {
-          Debug.Log($"Adjusted Base minDiff={minDiff} min={min} precision={_tickPrecision.Value} compareValue={compareValue}");
-          return AdjustBaseTick(Mathf.CeilToInt((float)minDiff) - TickDesiredDeviation);
+          return AdjustBaseTick(Mathf.CeilToInt((float)minDiff) - TickDeviation);
         }
       }
 
       return 0;
     }
 
-    private int CheckAdjustPredictionTick(SyncResponse syncItem) {
+    private int CheckAdjustPredictionTick(SyncResponse syncItem, double minValue, float compareValue) {
       if (syncItem.PredictionTickOffset < MinClientPredictionAhead) {
         return AdjustPredictionTick(Mathf.FloorToInt((float)(syncItem.PredictionTickOffset - MinClientPredictionAhead)));
       }
 
       if (_syncBuffer.Count > ServerTickAdjustmentSize) {
-        double min = GetMinPredictionOffset();
-        double minDiff = min - MinClientPredictionAhead;
-        float compareValue = TickDesiredDeviation +
-                             Mathf.InverseLerp(TickDesiredDeviation, TickDesiredDeviation * 2, (float)_tickPrecision.Value) * TickDesiredDeviation;
+        double minDiff = minValue - MinClientPredictionAhead;
         if (minDiff > compareValue) {
-          Debug.Log($"Adjusted Prediction minDiff={minDiff} min={min}  precision={_tickPrecision.Value} compareValue={compareValue}");
-          return AdjustPredictionTick(Mathf.CeilToInt((float)minDiff - TickDesiredDeviation));
+          return AdjustPredictionTick(Mathf.CeilToInt((float)minDiff - TickDeviation));
         }
       }
 
@@ -224,33 +218,19 @@ namespace NetworkScripts{
       });
     }
 
-    private void CalculatePrecision() {
-      (double hbMin, double hbMax) = GetMinMaxD(
+    private (double, double, double, double) GetMinMaxBasePrecision() {
+      (double baseMin, double baseMax) = GetMinMaxD(
         Array.ConvertAll(
           _syncBuffer.GetTail(ServerTickAdjustmentSize),
           x => Math.Round(x.HeartBeatOffset * 10) / 10) //round to 1 tenth to reduce noise
       );
-      (double prMin, double prMax) = GetMinMaxD(
+      (double predictMin, double predictMax) = GetMinMaxD(
         Array.ConvertAll(
           _syncBuffer.GetTail(ServerTickAdjustmentSize),
           x => Math.Round(x.PredictionTickOffset * 10) / 10) //round to 1 tenth to reduce noise
       );
-      _tickPrecision.Add(Math.Max(hbMax - hbMin, prMax - prMin));
+      return (baseMin, baseMax, predictMin, predictMax);
     }
-
-    private double GetMinBaseOffset() =>
-      GetMinD(
-        Array.ConvertAll(
-          _syncBuffer.GetTail(ServerTickAdjustmentSize),
-          x => Math.Round(x.HeartBeatOffset * 10) / 10) //round to 1 tenth to reduce noise
-      );
-
-    private double GetMinPredictionOffset() =>
-      GetMinD(
-        Array.ConvertAll(
-          _syncBuffer.GetTail(ServerTickAdjustmentSize),
-          x => Math.Round(x.PredictionTickOffset * 10) / 10) //round to 1 tenth to reduce noise
-      );
 
     #endregion
 
@@ -267,13 +247,11 @@ namespace NetworkScripts{
     [Client]
     public virtual void ClientSendPing() {
       if (_networkTickBase % ServerTickOffsetSyncFrequency == 0) {
-        for (int i = 0; i < SendPingCount; i++) {
-          CmdPingTick((byte)_syncRequestBuffer.Add(new SyncRequest() {
-            RequestId = _syncRequestBuffer.Count,
-            BaseTick = _networkTickBase,
-            PredictionTick = _networkTickPrediction,
-          }));
-        }
+        CmdPingTick((byte)_syncRequestBuffer.Add(new SyncRequest() {
+          RequestId = _syncRequestBuffer.Count,
+          BaseTick = _networkTickBase,
+          PredictionTick = _networkTickPrediction,
+        }));
       }
     }
 
@@ -358,9 +336,7 @@ namespace NetworkScripts{
 
     private static int NonNegativeValue(int value) => value > 0 ? value : 0;
 
-    private uint GetDeltaTicks() {
-      return (uint)(Time.deltaTime / Time.fixedDeltaTime);
-    }
+    private uint GetDeltaTicks() => (uint)(Time.deltaTime / Time.fixedDeltaTime);
 
     //Even though we split each tick to 100 sometimes we see 104 or larger ticks - we allow for this by not using 255 split but using byte to transfer
     private byte GetTickFraction() {
@@ -387,16 +363,6 @@ namespace NetworkScripts{
       }
 
       return (min, max);
-    }
-
-    private static double GetMinD(double[] array) {
-      if (array.Length == 0) return double.MinValue;
-      double min = array[0];
-      for (int i = 0; i < array.Length; i++)
-        if (min > array[i])
-          min = array[i];
-
-      return min;
     }
 
     #endregion
