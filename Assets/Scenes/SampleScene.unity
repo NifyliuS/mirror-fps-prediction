@@ -1527,7 +1527,7 @@ MonoBehaviour:
   NoDelay: 1
   Interval: 10
   Timeout: 10000
-  FastResend: 1
+  FastResend: 0
   CongestionWindow: 0
   SendWindowSize: 4096
   ReceiveWindowSize: 4096
