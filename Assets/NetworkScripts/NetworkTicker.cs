@@ -63,6 +63,7 @@ namespace NetworkScripts{
 
     private void Awake() {
       _tickPrecision = new ExponentialMovingAverage(ServerTickAdjustmentSize);
+      _lastTickStart = Time.fixedTimeAsDouble;
     }
 
     public override bool OnSerialize(NetworkWriter writer, bool initialState) {
