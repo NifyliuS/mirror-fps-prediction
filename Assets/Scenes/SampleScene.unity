@@ -293,9 +293,9 @@ GameObject:
   - component: {fileID: 473720457}
   - component: {fileID: 473720456}
   - component: {fileID: 473720455}
+  - component: {fileID: 473720452}
   - component: {fileID: 473720454}
   - component: {fileID: 473720453}
-  - component: {fileID: 473720452}
   - component: {fileID: 473720461}
   m_Layer: 0
   m_Name: Capsule
@@ -472,7 +472,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: df61b6be964384caa9ef60bebe69735e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  movement: {fileID: 0}
+  movement: {fileID: 473720452}
   XSensitivity: 2
   YSensitivity: 2
   MinimumX: -90

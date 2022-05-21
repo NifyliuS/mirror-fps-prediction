@@ -2,7 +2,7 @@
 
 namespace Mirror.Examples.Benchmark
 {
-    public class PlayerMovement : NetworkBehaviour
+    public class PlayerMovementBench : NetworkBehaviour
     {
         public float speed = 5;
 
