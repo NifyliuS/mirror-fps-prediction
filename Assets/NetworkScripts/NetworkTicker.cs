@@ -21,8 +21,6 @@ namespace NetworkScripts{
     private Buffer256<TickSyncRequest> _syncRequestBuffer = new Buffer256<TickSyncRequest>();
     private Buffer256<TickSyncResponse> _syncBuffer = new Buffer256<TickSyncResponse>();
 
-    private static bool _isReady = false;
-
     private int _forwardPhysicsSteps = 0; //Used to fast forward physics engine
     private int _skipPhysicsSteps = 0; //Used to skip ticks or reverse the physics engine
 
@@ -44,7 +42,6 @@ namespace NetworkScripts{
 
     #region Private Variables
 
-    private NetworkTick _networkTick;
     private uint _localTick = 0;
 
     private int _lastSyncTick = -1; //Used to ignore older or duplicate entries from the server syncing
@@ -53,13 +50,31 @@ namespace NetworkScripts{
 
     #endregion
 
-    #region Initial Sync/Spawn
 
+    #region Static Instanciation
+
+    /* Instantiate instances - used for Static level access */
+    private static NetworkTicker _instance;
+    private static NetworkTick _networkTick;
+    public static NetworkTicker Instance => _instance;
+    public static NetworkTick Tick => _networkTick;
+
+    /* Instantiate NetworkTick static Instance locally + Add Network Controller as well */
     public virtual void Awake() {
-      _networkTick = new NetworkTick();
-      _tickPrecision = new ExponentialMovingAverage(ServerTickAdjustmentSize);
-      _lastTickStart = Time.fixedTimeAsDouble;
+      if (_instance != null && _instance != this) {
+        Destroy(this.gameObject);
+      }
+      else {
+        _instance = this;
+        _networkTick = new NetworkTick();
+        _tickPrecision = new ExponentialMovingAverage(ServerTickAdjustmentSize);
+        _lastTickStart = Time.fixedTimeAsDouble;
+      }
     }
+
+    #endregion
+
+    #region Initial Sync/Spawn
 
     public override bool OnSerialize(NetworkWriter writer, bool initialState) {
       base.OnSerialize(writer, initialState);
@@ -120,8 +135,8 @@ namespace NetworkScripts{
         HeartBeatOffset = heartBeatOffset,
       };
       _syncBuffer.Add(syncItem);
-      if (!_isReady) {
-        _isReady = true;
+      if (!_networkTick.ready) {
+        _networkTick.SetIsReady(true);
         _networkTick.SetClientPredictionTick(
           (uint)(_networkTick.baseTick + Mathf.CeilToInt((float)(MinClientPredictionAhead - predictionTickOffset) + 1))
         );
