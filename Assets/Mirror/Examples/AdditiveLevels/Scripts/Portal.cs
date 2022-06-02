@@ -15,14 +15,14 @@ namespace Mirror.Examples.AdditiveLevels
         public Vector3 startPosition;
 
         [Tooltip("Reference to child TMP label")]
-        public TMPro.TextMeshPro label;
+        //public TMPro.TextMeshPro label;
 
         [SyncVar(hook = nameof(OnLabelTextChanged))]
         public string labelText;
 
         public void OnLabelTextChanged(string _, string newValue)
         {
-            label.text = labelText;
+           // label.text = labelText;
         }
 
         // This is approximately the fade time
