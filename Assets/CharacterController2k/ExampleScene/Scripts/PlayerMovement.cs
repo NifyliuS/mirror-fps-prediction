@@ -257,8 +257,8 @@ public class PlayerMovement : MonoBehaviour
     // rotate with QE keys
     void RotateWithKeys()
     {
-        float horizontal2 = Input.GetAxis("Horizontal2");
-        transform.Rotate(Vector3.up * horizontal2 * rotationSpeed * Time.fixedDeltaTime);
+        //float horizontal2 = Input.GetAxis("Horizontal2");
+        //transform.Rotate(Vector3.up * horizontal2 * rotationSpeed * Time.fixedDeltaTime);
     }
 
     void EnterLadder()

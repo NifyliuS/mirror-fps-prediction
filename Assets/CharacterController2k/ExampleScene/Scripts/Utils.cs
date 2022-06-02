@@ -222,8 +222,8 @@ public class Utils
     // check if the cursor is over a UI or OnGUI element right now
     // note: for UI, this only works if the UI's CanvasGroup blocks Raycasts
     // note: for OnGUI: hotControl is only set while clicking, not while zooming
-    public static bool IsCursorOverUserInterface()
-    {
+    public static bool IsCursorOverUserInterface() {
+        if (!EventSystem.current) return false;
         // IsPointerOverGameObject check for left mouse (default)
         if (EventSystem.current.IsPointerOverGameObject())
             return true;
